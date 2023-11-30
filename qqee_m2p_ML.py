@@ -2,16 +2,14 @@
 # from array import array
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib.colors as colors
 
 import TGPS_m2p
 # from TGPS_m2p import ft_gen_ph_spc, ft_get_mg5weights
-import lhapdf
 
 import tensorflow as tf
 # import tensorflow.math as tfm
 from tensorflow.keras import Sequential
-from tensorflow.keras.layers import Dense, Dropout
+from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ReduceLROnPlateau, EarlyStopping
 
@@ -22,9 +20,7 @@ import uproot as ur
 ENERGY = TGPS_m2p.ENERGY
 
 # Actual independent indices in 4-momentum input to madgraph
-# indindx = np.delete(list(range(8, 4*4)), range(0, 2*4, 4))
 indindx = np.array([0, 4, 9, 10, 11])
-# p23 = lhapdf.mkPDF("NNPDF23_lo_as_0130_qed", 0)
 p23 = TGPS_m2p.p23
 
 # %% Relevant definitions
@@ -79,61 +75,6 @@ def mee_invariant(momenta):
     )
     return mee_inv
 
-
-# %%
-
-n0 = int(1e6)
-# thedata4mg, weights, ncut = TGPS_m2p.qqee_gen_ph_spc(energy=ENERGY, npts=n0)
-thedata4mg, weights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(energy=ENERGY, npts=n0)
-totweights = get_weights(thedata4mg, weights)
-
-td4mgtrans = inputtrans(thedata4mg)
-
-pre = thedata4mg[:, 2] + thedata4mg[:, 3]
-mee = np.sqrt(pre[:, 0]**2 - (pre[:, 1]**2 + pre[:, 2]**2 + pre[:, 3]**2))
-plt.hist(
-    mee[totweights > 0.0],
-    weights=totweights[totweights > 0.0],
-    bins=lbins(20, 1200, 100)
-)
-plt.xlim(20, 1200)
-plt.xlabel('$m_{ee}$')
-plt.xscale('log')
-plt.yscale('log')
-plt.show()
-
-plt.hist(
-    mee[totweights > 0.0],
-    weights=totweights[totweights > 0.0],
-    bins=lbins(20, 600, 100)
-)
-plt.xlabel('$m_{ee}$')
-plt.xlim(20, 600)
-plt.xscale('log')
-plt.yscale('log')
-plt.show()
-
-# %%
-
-nreg = 10
-lims1, lims2 = functions.get_lims(totweights, nreg)
-lims3 = functions.get_lims2(totweights, nreg)
-
-hbins, ebins, p = plt.hist(
-    np.log10(totweights[totweights > 0.0]),
-    bins=100,
-    density=True,
-    histtype="step",
-    linewidth=1.5
-)
-# plt.vlines(np.log10(lims1), 0, hbins.max()*1.05, colors='r')
-# plt.vlines(np.log10(lims2), 0, hbins.max()*1.05, colors='g')
-plt.vlines(np.log10(lims3), 0, hbins.max()*1.05, colors='g')
-plt.ylim(0, hbins.max()*1.05)
-# plt.vlines(np.log10(lims2), 0, hbins.max()*1.05, colors='g', ls='dotted')
-plt.show()
-
-lims = lims3
 
 # %%
 NNREG = 2
@@ -221,7 +162,7 @@ def find_lim(data, weights, margn=15, datamin=None):
     return [minlim, dmean + margn*dstd]
 
 
-# Training function
+# First proposal for iterative training
 def itertrain(
     model, trainsteps, nreg,
     epochs=2000,
@@ -307,6 +248,10 @@ def itertrain(
     return x_n, y_n, fmmnta_sv, weights_sv, lims
 
 
+# Get a limit for a set of weights (assumed uniform distribution) with some
+# target relative importance.
+# For example, `target=10.0` here means that the division will be put where
+# one region has 10 times more importance than the other
 def get_lims_test(weights, target=10.0):
     asrt = np.argsort(weights)
     wsrt = weights[asrt]
@@ -340,8 +285,9 @@ def get_lims_test(weights, target=10.0):
     return tarinterp
 
 
+# Second proposal for iterative training
 def itertrain2(
-    model, trainsteps, subdivsteps, nreg=2,
+    model, trainsteps, subdivsteps,
     epochs=2000,
     batch_size=5000,
     npts=int(1e5),
@@ -353,8 +299,11 @@ def itertrain2(
 ):
     global NNREG
     NNREG = 2
+    nreg = NNREG
     nini = int(npts)
-    fmmnta, preweights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(energy=ENERGY, npts=nini)
+    fmmnta, preweights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(
+        energy=ENERGY, npts=nini
+    )
     weights = get_weights(fmmnta, preweights)
     # The first limit should separate a region with enough importance for
     # unweighted events
@@ -504,6 +453,7 @@ loss = myloss4
 learning_rate = 0.0001
 # nreg = 7
 
+# TODO Define a model here or recreate the model when more limits are created?
 # mdl = Sequential()
 # mdl.add(Dense(nreg*64, input_shape=(indim,), activation='relu'))
 # mdl.add(Dense(nreg*32, activation='relu'))
@@ -529,8 +479,18 @@ verbose = 0
 #     batch_size=batch_size,
 #     verbose=verbose,
 # )
+# 13: Train 13 times
+# 9: of those 13, 9 make a new division, since we start with 2 divisions this
+#   means 11 divisions or 10 regions
+# npts: number of points used in first run and training
+# npts_iter: number of points tested in iteration steps.  They will be
+#   filtered by the NN
+# uwevents: Number of events we will attempt to create.  Right now is used to
+#   decide where to create the first division
+# epochs, batch_size, verbose, callbacks follow their meaning in fit function
+#   of keras
 nreg, lims, wtst, xtst, ytst, fmtst, wghttst, mdl, Eqlim = itertrain2(
-    None, 13, 9, 2,
+    None, 13, 9,
     npts=1e5,
     npts_iter=1e6,
     epochs=1000,
@@ -540,10 +500,11 @@ nreg, lims, wtst, xtst, ytst, fmtst, wghttst, mdl, Eqlim = itertrain2(
     callbacks=stopper
 )
 
-diff = np.abs(np.round(mdl(xtst).numpy()*(nreg - 1)) - ytst)
+# Check results for training data
+# diff = np.abs(np.round(mdl(xtst).numpy()*(nreg - 1)) - ytst)
 # plt.hist(diff, bins=int(diff.max() - diff.min()))
 # plt.show()
-print((diff == 0).sum()/diff.shape[0])
+# print((diff == 0).sum()/diff.shape[0])
 
 # %%
 
@@ -574,6 +535,13 @@ print((diff == 0).sum()/diff.shape[0])
 # plt.hist(np.log10(tw1[tw1 > 0.0]), bins=100, histtype='step')
 # plt.show()
 
+print(
+    "region",
+    "\nactual number of points",
+    "\nguessed number of points",
+    "\npercentage guesed in wrong region (by same real region)",
+    "\npercentage guesed in wrong region (by same guessed region)"
+)
 for j in range(nreg):
     print(
         j, (sdind1 == j).sum(), (guessr1 == j).sum(),
@@ -581,20 +549,20 @@ for j in range(nreg):
         (sdind1[guessr1 == j] != j).sum()/(guessr1 == j).sum()*100
     )
 
-plt.title("Dispersion of guesses per region")
-for j in range(nreg):
-    disphist = guessr1[sdind1 == j]
-    plt.hist(
-        disphist,
-        bins=disphist.max() - disphist.min() + 1,
-        histtype='step',
-        linewidth=2,
-        linestyle='dashed',
-        label=j
-    )
-plt.yscale('log')
-plt.legend()
-plt.show()
+# plt.title("Dispersion of guesses per region")
+# for j in range(nreg):
+#     disphist = guessr1[sdind1 == j]
+#     plt.hist(
+#         disphist,
+#         bins=disphist.max() - disphist.min() + 1,
+#         histtype='step',
+#         linewidth=2,
+#         linestyle='dashed',
+#         label=j
+#     )
+# plt.yscale('log')
+# plt.legend()
+# plt.show()
 
 # %% VOLUMES AND AVERAGES
 
@@ -609,7 +577,7 @@ njregprev = np.empty(nreg)
 nvols = int(1e6)
 for j in range(nreg):
     td4mgvol, wvol, ncutvol = TGPS_m2p.qqee_gen_ph_spc_fast(
-        energy=Eqlim[j], npts=nvol)
+        energy=Eqlim[j], npts=nvols)
     td4mgtvol = inputtrans(td4mgvol)
     # guess2 = np.round(mdl(td4mgt2).numpy()*(nreg - 1)).astype(int)
     guessvol = np.round(mdl.predict(td4mgtvol, batch_size=10000)*(nreg - 1)).astype(int)
@@ -645,7 +613,7 @@ imprtncs1 = (avergs*vols)/(avergs*vols).sum()
 
 # %%
 
-n2 = int(1e8)
+n2 = int(1e7)
 td4mg2, w2, ncut2 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[1], npts=n2)
 
 td4mgt2 = inputtrans(td4mg2)
@@ -797,112 +765,7 @@ plt.hist(
 plt.xlim(20, 1200)
 plt.yscale('log')
 plt.xscale('log')
-plt.show()
-
-# %% Vanity plots
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 0, 0][guesssv.flatten() == 10],
-#     fmmntsv[:, 1, 0][guesssv.flatten() == 10],
-#     s=1
-# )
-# plt.xlabel(r'$E_{u}$ [GeV]')
-# plt.ylabel(r'$E_{\bar{u}}$ [GeV]')
-# plt.savefig('Eqq10.png', bbox_inches='tight', dpi=200)
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 0, 0][guesssv.flatten() == 9],
-#     fmmntsv[:, 1, 0][guesssv.flatten() == 9],
-#     s=1
-# )
-# plt.xlabel(r'$E_{u}$ [GeV]')
-# plt.ylabel(r'$E_{\bar{u}}$ [GeV]')
-# plt.savefig('Eqq09.png', bbox_inches='tight', dpi=200)
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 0, 0][guesssv.flatten() == 8],
-#     fmmntsv[:, 1, 0][guesssv.flatten() == 8],
-#     s=1
-# )
-# plt.xlabel(r'$E_{u}$ [GeV]')
-# plt.ylabel(r'$E_{\bar{u}}$ [GeV]')
-# plt.savefig('Eqq08.png', bbox_inches='tight', dpi=200)
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 0, 0][guesssv.flatten() == 6],
-#     fmmntsv[:, 1, 0][guesssv.flatten() == 6],
-#     s=1
-# )
-# plt.xlabel(r'$E_{u}$ [GeV]')
-# plt.ylabel(r'$E_{\bar{u}}$ [GeV]')
-# plt.savefig('Eqq06.png', bbox_inches='tight', dpi=200)
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 0, 0][guesssv.flatten() == 7],
-#     fmmntsv[:, 1, 0][guesssv.flatten() == 7],
-#     s=1
-# )
-# plt.xlabel(r'$E_{u}$ [GeV]')
-# plt.ylabel(r'$E_{\bar{u}}$ [GeV]')
-# plt.savefig('Eqq07.png', bbox_inches='tight', dpi=200)
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 0, 0][guesssv.flatten() == 5],
-#     fmmntsv[:, 1, 0][guesssv.flatten() == 5],
-#     s=1
-# )
-# plt.xlabel(r'$E_{u}$ [GeV]')
-# plt.ylabel(r'$E_{\bar{u}}$ [GeV]')
-# plt.savefig('Eqq05.png', bbox_inches='tight', dpi=200)
-# # %%
-
-# plt.figure(figsize=(4, 4))
-# plt.hist(
-#     totweights,
-#     bins=lbins(1e-30, 8.61, 100),
-# )
-# plt.xscale('log')
-# plt.xlabel('Weight values')
-# plt.savefig('weightall.png', bbox_inches='tight', dpi=200)
-
-# plt.figure(figsize=(4, 4))
-# plt.hist(
-#     wghttst,
-#     bins=lbins(1e-30, 8.61, 100),
-# )
-# plt.vlines(lims, 0, 180000, colors='g')
-# plt.xscale('log')
-# plt.xlabel('Weight values')
-# plt.savefig('weighttrain.png', bbox_inches='tight', dpi=200)
-
-
-# plt.figure(figsize=(4, 4))
-# plt.scatter(
-#     fmmntsv[:, 2, 1][guesssv.flatten() == 10],
-#     fmmntsv[:, 2, 2][guesssv.flatten() == 10],
-#     s=1
-# )
-# plt.xlabel(r'$p_{e,x}$ [GeV]')
-# plt.ylabel(r'$p_{e,y}$ [GeV]')
-# plt.show()
-
-# %%
-
-plt.hist(
-    np.log10(weightssv[weightssv > 0.0]),
-    weights=weightssv[weightssv > 0.0],
-    bins=1000
-)
-# plt.yscale('log')
-# plt.xscale('log')
-plt.show()
-
+plt.savefig("regions.pdf")
 
 # %% MADGRAPH
 
@@ -1020,167 +883,4 @@ error.set_yscale('log')
 # plt.xscale('log')
 # plt.yscale('log')
 
-# %%
-
-plt.title("$u$ energy")
-plt.hist(
-    Eu1,
-    bins=50,
-    density=True,
-    histtype='step'
-)
-plt.hist(
-    td4mg2f[:, 0, 0][totw2 > 0.0],
-    weights=totw2[totw2 > 0.0],
-    bins=50,
-    density=True,
-    histtype='step'
-)
-plt.yscale('log')
-plt.show()
-
-plt.title(r"$\bar{u}$ energy")
-plt.hist(
-    Eu2,
-    bins=100,
-    density=True,
-    histtype='step'
-)
-plt.hist(
-    td4mg2f[:, 1, 0][totw2 > 0.0],
-    weights=totw2[totw2 > 0.0],
-    bins=100,
-    density=True,
-    histtype='step'
-)
-plt.yscale('log')
-plt.show()
-
-# %%
-
-plt.hist(
-    np.log10(Pzu1),
-    bins=50,
-    density=True,
-    histtype='step'
-)
-plt.hist(
-    np.log10(td4mg2f[:, 0, 3][totw2 > 0.0]),
-    weights=totw2[totw2 > 0.0],
-    bins=50,
-    density=True,
-    histtype='step'
-)
-plt.show()
-
-plt.hist(
-    np.log10(-Pzu2),
-    bins=50,
-    density=True,
-    histtype='step'
-)
-plt.hist(
-    np.log10(-td4mg2f[:, 1, 3][totw2 > 0.0]),
-    weights=totw2[totw2 > 0.0],
-    bins=50,
-    density=True,
-    histtype='step'
-)
-plt.show()
-
-
-# %% Test madgraph against my weights function
-
-data_rf = np.array(
-    [
-        [Eu1, Eu2, Ee1, Ee2],
-        [Pxu1, Pxu2, Pxe1, Pxe2],
-        [Pyu1, Pyu2, Pye1, Pye2],
-        [Pzu1, Pzu2, Pze1, Pze2],
-    ]
-).T
-
-ws_rf = get_weights(data_rf, np.full(data_rf.shape[0], 1))
-
-# %%
-
-plt.figure(figsize=(7, 7))
-plt.scatter(
-    Pzu1,
-    -Pzu2,
-    c=np.log10(ws_rf),
-    cmap="turbo",
-    s=1
-)
-# plt.xlim(0, 100)
-# plt.ylim(0, 100)
-# plt.yscale('log')
-plt.show()
-
-plt.hist(
-    np.log10(ws_rf),
-    bins=100,
-    density=True,
-    histtype='step'
-)
-plt.show()
-
-
-# %% Elements of event file
-
-myevents['LHEF;1']['Event']['Event.CouplingQCD'].arrays(library="np")
-#['Rwgt.fUniqueID']
-# 6 branches:
-# Rwgt - Rwgt.fBits, Rwgt.Weight, Rwgt.fUniqueID: All empty
-# Event
-# - Event.fBits: all 50331648)
-# - Event.Number: indices
-# - Event.Weight: 179.642
-# - Event.ScalePDF This seems to be s
-# - Event.fUniqueID 0
-# - Event.ProcessID 1
-# - Event.Nparticles Number of particles in event, 4 or 5
-# - Event.CouplingQED 0.00754677
-# - Event.CouplingQCD TODO Find out how to get these values, maybe using s?
-# Particle
-# Rwgt_size
-# Event_size
-# Particle_size
-
-# %%
-
-muPDF = np.concatenate(
-    myevents['LHEF;1']['Event']['Event.ScalePDF'].arrays(library="np")['Event.ScalePDF']
-)
-plt.hist(muPDF, bins=100)
-plt.yscale('log')
-plt.show()
-
-alphaQCD = np.concatenate(
-    myevents['LHEF;1']['Event']['Event.CouplingQCD'].arrays(library="np")['Event.CouplingQCD']
-)
-plt.hist(alphaQCD, bins=100)
-# plt.yscale('log')
-plt.show()
-
-# %% alpha_s test
-
-p23 = lhapdf.mkPDF("NNPDF23_lo_as_0130_qed", 0)
-pdfalphas = np.array([p23.alphasQ(x) for x in muPDF])
-
-plt.scatter(
-    alphaQCD,
-    alphaQCD/pdfalphas
-)
-
-# %% Pseudorapidity test
-
-cth1 = Pze1/np.sqrt(P2e1)
-th1 = np.arccos(cth1)
-eta1 = -np.log(np.tan(th1/2))
-
-plt.scatter(
-    Pze1/np.sqrt(P2e1),
-    eta1
-)
-
+plt.savefig("events.pdf")
