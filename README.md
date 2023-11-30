@@ -3,6 +3,7 @@
 This is the code used for the examples.
 At the moment is the code for the $u\bar{u} \to e^+ e^-$ example.
 
+
 ## Note about installing requirements
 
 First of all, `lhapdf6` requires an older version of python.
@@ -26,7 +27,8 @@ To install tensorflow with `pip` run
 If you want you can try installing tensorflow with conda and if it works this
 instructions could be shortened.
 
-TODO: use `environment.yml` if we do not mind enforcing conda usage.
+TODO: use `environment.yml` if we do not mind enforcing conda.
+
 
 ## Generating `matrix2py` using MadGraph
 
@@ -35,11 +37,25 @@ follow one of many tutorial for its installation.
 To generate `matrix2py`, first generate some process using `MadGraph` command
 line.
 
-	mg5> generate u u~ > e+ e-
+	MG5_aMC> generate u u~ > e+ e-
+	MG5_aMC> output standalon my_uu_to_ee
+	MG5_aMC> exit
+
+The string `my_uu_to_ee` is the name of the folder where the process code has been saved.
+Now we need to change to the directory for the subprocess and build the `matrix2py` module
+
+	$> cd my_uu_to_ee/SubProcesses/P1_uux_epem
+	$> make matrix2py.so
+
+See this [FAQ](https://cp3.irmp.ucl.ac.be/projects/madgraph/wiki/FAQ-General-4) for more information about `matrix2py`.
 
 Other necessary packages are `ExRootAnalysis` and `lhapdf6`.
 Both can be easily installed with `MadGraph`:
 
-	mg5> install ExRootAnalysis
-	mg5> install lhapdf6
+	MG5_aMC> install ExRootAnalysis
+	MG5_aMC> install lhapdf6
 
+`ExRootAnalysis` is used to convert events to `ROOT` format,
+convenient since we are already using `ROOT` for phase space generation.
+In the case of `lhapdf6`, we use the python module to calculate
+PDFs for initial partons.
