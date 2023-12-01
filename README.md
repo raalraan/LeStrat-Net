@@ -44,10 +44,13 @@ line.
 The string `my_uu_to_ee` is the name of the folder where the process code has been saved.
 Now we need to change to the directory for the subprocess and build the `matrix2py` module
 
-	$> cd my_uu_to_ee/SubProcesses/P1_uux_epem
-	$> make matrix2py.so
+	(py39-mlmc) $> cd my_uu_to_ee/SubProcesses/P1_uux_epem
+	(py39-mlmc) $> make matrix2py.so
 
 See this [FAQ](https://cp3.irmp.ucl.ac.be/projects/madgraph/wiki/FAQ-General-4) for more information about `matrix2py`.
+
+
+## Other necessary elements
 
 Other necessary packages are `ExRootAnalysis` and `lhapdf6`.
 Both can be easily installed with `MadGraph`:
@@ -59,3 +62,19 @@ Both can be easily installed with `MadGraph`:
 convenient since we are already using `ROOT` for phase space generation.
 In the case of `lhapdf6`, we use the python module to calculate
 PDFs for initial partons.
+
+It is necessary to add `lhapdf6` library paths to environment variables,
+particularly, to have access to the `lhapdf` module in python:
+
+	export MG5PATH=<directory where you extracted MadGraph>
+	export LD_LIBRARY_PATH=$MG5PATH/HEPTools/lhapdf6_py3/lib:$LD_LIBRARY_PATH
+	export PYTHONPATH=$MG5PATH/HEPTools/lhapdf6_py3/lib/python3.9/site-packages/LHAPDF-6.3.0-py3.9-linux-x86_64.egg/:$PYTHONPATH
+
+The last line may need to be adjusted (`...LHAPDF-6.3.0...`) depending on the version of `lhapdf6` downloaded by `MadGraph`.
+This can be included in a `envrc` file, including the line `conda activate py39-mlmc`, so that you can do `source envrc`.
+Alternatively, you can include those lines in `~/.bashrc` to have them always defined in every `bash` shell.
+Test that `lhapdf6` can be imported by running
+
+	(py39-mlmc) $> python3 -c "import lhapdf; print(lhapdf.__version__)"
+
+TODO: What else?
