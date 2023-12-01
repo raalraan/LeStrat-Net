@@ -20,11 +20,11 @@ Activate the newly created environment with `conda activate py39-mlmc`.
 For some reason TensorFlow works better when installed with pip than when installed with conda.
 Additionally, in the [install page](https://www.tensorflow.org/install) for
 TensorFlow documentation, the `pip` method is recommended.
-To install tensorflow with `pip` run
+To install TensorFlow with `pip` run
 
 	(py39-mlmc) $> pip install tensorflow
 
-If you want you can try installing tensorflow with conda and if it works this
+If you want you can try installing TensorFlow with conda and if it works this
 instructions could be shortened.
 
 TODO: use `environment.yml` if we do not mind enforcing conda.
@@ -38,7 +38,7 @@ To generate `matrix2py`, first generate some process using `MadGraph` command
 line.
 
 	MG5_aMC> generate u u~ > e+ e-
-	MG5_aMC> output standalon my_uu_to_ee
+	MG5_aMC> output standalone my_uu_to_ee
 	MG5_aMC> exit
 
 The string `my_uu_to_ee` is the name of the folder where the process code has been saved.
