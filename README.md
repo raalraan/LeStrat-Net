@@ -11,7 +11,7 @@ Therefore this code has been tested with `python` 3.9.18.
 The easiest way to install most of the required components with full compatibility
 is by using `conda` and installing everything in a conda environment with
 
-	$> conda create -y -c conda-forge --name py39-mlmc python=3.9 root matplotlib
+	$> conda create -y -c conda-forge --name py39-mlmc python=3.9 root uproot matplotlib
 
 where the environment `py39-mlmc` is used as a suggestion but can be any other word.
 Add `jupyter` in case you are interested in using jupyter kernel and/or notebooks.
