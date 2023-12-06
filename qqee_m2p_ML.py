@@ -731,6 +731,18 @@ for k in range(nreg):
 
 meesv = mee_invariant(fmmntsv)
 
+# %% Acceptance rejection: Get the final results
+
+filt_ar = []
+eff_ar = []
+punif = []
+for k in range(nreg):
+    pnorm = weightssv[guesssv.flatten() == k]/lims[k + 1]
+    fpnorm = pnorm <= 1.0
+    punif += [np.random.rand(pnorm.shape[0])]
+    filt_ar += [(pnorm > punif[k])*fpnorm]
+    eff_ar += [filt_ar[k].sum()/filt_ar[k].shape[0]]
+
 # %%
 
 dummeesv = np.empty((0))
