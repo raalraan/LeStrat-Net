@@ -760,6 +760,9 @@ for k in range(nreg):
         axis=0
     )
 
+np.savetxt("mlevents.csv", fmmnt_accrej.reshape((nevents, 16)))
+# read with np.loadtxt("mlevents.csv").reshape((nevents, 4, 4))
+
 # %%
 
 meesv_divs = [
