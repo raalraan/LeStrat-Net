@@ -610,6 +610,7 @@ for j in range(nreg):
     njregprev = np.copy(njregnew)
 
 imprtncs1 = (avergs*vols)/(avergs*vols).sum()
+print("Region importances", imprtncs1)
 
 # %%
 
@@ -625,12 +626,13 @@ mee2_f = mee_invariant(td4mg2[guess2.flatten() > 0])
 
 # %%
 
-wsums = np.array(
-    [weights2_f[guess2[guess2.flatten() > 0].flatten() == k].sum() for k in range(1, nreg)]
-)
+# If one wants to compare agains importances from single sampling
+# wsums = np.array(
+#     [weights2_f[guess2[guess2.flatten() > 0].flatten() == k].sum() for k in range(1, nreg)]
+# )
 
-imprtncs1 = wsums/wsums.sum()
-print(imprtncs1)
+# imprtncs1_th = wsums/wsums.sum()
+# print("Importances from single sampling:", imprtncs1_th)
 
 # %% REPEATED SAMPLING WITH CHANGING ENERGY LIMITS
 
@@ -692,7 +694,7 @@ for k in range(nreg):
 for k in range(nreg):
     for j in range(200):
         # TODO Use efficiency when acceptance rejection uses uniform distribution
-        if (guesssv == k).sum() > np.round(reqevs[k - 1]/eff_ar[k]):
+        if (guesssv == k).sum() > np.round(reqevs[k]/eff_ar[k]):
             print(
                 "Region {}:".format(k),
                 "Requested number of points has been reached"
