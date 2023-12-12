@@ -20,6 +20,8 @@ masses4u4d4b = array('d', [0.0, 0.0, MB]*4)
 
 p23 = lhapdf.mkPDF("NNPDF23_lo_as_0130_qed", 0)
 
+ROOT.gInterpreter.ProcessLine('#include "JustGenPhaseSpace.h"')
+
 # %%
 
 
@@ -117,27 +119,15 @@ def qqee_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
 
     rseed = np.random.randint(1, 100000000)
 
-    # TODO Use a compiled version instead
-    callstr = "JustGenPhaseSpace.C({},{},{},{},{},{})".format(
-        energy1, energy2, npts, cutptl, cutetal, rseed)
+    jgps = ROOT.gen_qqee_space(energy1, energy2, npts, cutptl, cutetal, rseed)
 
-    result = sp.Popen(['root', callstr, "-q", "-l", "-b"], stdout=sp.PIPE)
-    output = result.stdout.read().decode('utf-8')
-    lines = output.split("\n")
-    lines = lines[2:]
-    # for j in range(len(lines)):
-    #     lines[j] = np.fromstring(lines[j], dtype=float, sep=' ')
-    # return lines[:-1]
-    nparr = np.fromstring(lines[0], dtype=float, sep=' ')
-    nparr = nparr.reshape((npts, 6))
+    weights = np.array(jgps.weight)
 
-    weights = nparr[:, 0]
-
-    enbeam1 = nparr[:, 1]
-    enbeam2 = nparr[:, 2]
-    pex = nparr[:, 3]
-    pey = nparr[:, 4]
-    pez = nparr[:, 5]
+    enbeam1 = np.array(jgps.Ebeam1)
+    enbeam2 = np.array(jgps.Ebeam2)
+    pex = np.array(jgps.pex)
+    pey = np.array(jgps.pey)
+    pez = np.array(jgps.pez)
 
     ppz = enbeam1 - enbeam2 - pez
     pem = np.sqrt(pex**2 + pey**2 + pez**2)
@@ -152,7 +142,7 @@ def qqee_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
         ppm, -pex, -pey, ppz,
      ]).T.reshape((npts, 4, 4))
 
-    return events, weights, int(lines[1])
+    return events, weights, int(jgps.cutpts)
 
 
 def gg4u4d4b_gen_ph_spc(energy=ENERGY, npts=int(1e5)):
