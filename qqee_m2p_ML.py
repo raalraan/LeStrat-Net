@@ -95,6 +95,14 @@ def myloss4(ytr, ypr):
     return maxdiff*summed/tf.cast(tf.shape(ypr)[0], tf.float32)
 
 
+def myloss5(ytr, ypr):
+    global NNREG
+    ydiff = tf.math.abs(ytr - ypr)
+    cdiff = ydiff*(NNREG - 1)
+    cdiff_re = (cdiff/0.333)**2
+    return tf.math.reduce_mean(cdiff_re)
+
+
 def myloss_mae(ytr, ypr):
     ydiff = tf.math.abs(ytr - ypr)
     ydiff_max = tf.math.reduce_max(ydiff)
@@ -449,7 +457,7 @@ def itertrain2(
 
 # loss = 'mae'
 # loss = 'mse'
-loss = myloss4
+loss = myloss5
 learning_rate = 0.0001
 # nreg = 7
 
