@@ -76,31 +76,87 @@ def mee_invariant(momenta):
     return mee_inv
 
 
+def region_actfunc(vals, nreg, outactivation):
+    if outactivation == 'sigmoid':
+        factmin = 0.0
+        factmax = 1.0
+    elif outactivation == 'tanh':
+        factmin = -1.0
+        factmax = 1.0
+    else:
+        raise ValueErrror("'outactivation' should be 'sigmoid' or 'tanh'")
+
+    factrange = factmax - factmin
+
+    # factregwid = factrange/nreg
+    # np.asarray(vals)*factregwid - factregwid*0.5 + factmin
+
+    factregwid = factrange/(nreg - 1)
+    res = np.asarray(vals)*factregwid + factmin
+
+    return res
+
+
+def actfunc_region(vals, nreg, outactivation):
+    if outactivation == 'sigmoid':
+        factmin = 0.0
+        factmax = 1.0
+    elif outactivation == 'tanh':
+        factmin = -1.0
+        factmax= 1.0
+    else:
+        raise ValueErrror("'outactivation' should be 'sigmoid' or 'tanh'")
+
+    factrange = factmax - factmin
+    # factregwid = factrange/nreg
+    # regs = np.ceil((np.asarray(vals) - factmin)/factregwid).astype(int)
+    # regs[regs == 0] = 1
+
+    factregwid = factrange/(nreg - 1)
+    res = (np.asarray(vals) - factmin)/factregwid
+
+    return np.round(res).astype(int)
+
+
 # %%
-NNREG = 2
 THRESHOLD = 0.2
 
 
-# The best so far
-def myloss4(ytr, ypr):
-    global NNREG
-    ydiff = tf.math.abs(ytr - ypr)
-    cdiff = ydiff*(NNREG - 1)
+def lossgen(nreg, loss, outactivation):
+    # For the usual 'mae' and 'mse' just bypass this function
+    if loss == 'mae' or loss == 'mse':
+        return loss
 
-    cdiff_shift = cdiff - THRESHOLD
-    fltr = cdiff_shift > 0
-    summed = tf.math.reduce_sum(cdiff[fltr])
+    if outactivation == 'sigmoid':
+        fact = 1.0
+    elif outactivation == 'tanh':
+        fact = 0.5
+    else:
+        raise ValueErrror("'outactivation' should be 'sigmoid' or 'tanh'")
 
-    maxdiff = 1 + tf.math.ceil(tf.math.reduce_max(cdiff))
-    return maxdiff*summed/tf.cast(tf.shape(ypr)[0], tf.float32)
+    def myloss4(ytr, ypr):
+        ydiff = fact*tf.math.abs(ytr - ypr)
+        cdiff = ydiff*(nreg - 1)
 
+        cdiff_shift = cdiff - THRESHOLD
+        fltr = cdiff_shift > 0
+        summed = tf.math.reduce_sum(cdiff[fltr])
 
-def myloss5(ytr, ypr):
-    global NNREG
-    ydiff = tf.math.abs(ytr - ypr)
-    cdiff = ydiff*(NNREG - 1)
-    cdiff_re = (cdiff/0.333)**2
-    return tf.math.reduce_mean(cdiff_re)
+        maxdiff = 1 + tf.math.ceil(tf.math.reduce_max(cdiff))
+        return maxdiff*summed/tf.cast(tf.shape(ypr)[0], tf.float32)
+
+    def myloss5(ytr, ypr):
+        ydiff = fact*tf.math.abs(ytr - ypr)
+        cdiff = ydiff*(nreg - 1)
+        cdiff_re = (3*cdiff)**2
+        return tf.math.reduce_mean(cdiff_re)
+
+    if loss == 'myloss5':
+        return myloss5
+    elif loss == 'myloss4':
+        return myloss4
+    else:
+        raise ValueErrror("'loss' should be 'mae', 'mse', 'myloss4' or 'myloss5'")
 
 
 def myloss_mae(ytr, ypr):
@@ -180,8 +236,6 @@ def itertrain(
     callbacks=None,
     learning_rate=None,
 ):
-    global NNREG
-    NNREG = nreg
     nini = int(npts)
     fmmnta, weights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(
         energy=ENERGY,
@@ -301,14 +355,26 @@ def itertrain2(
     npts=int(1e5),
     npts_iter=int(1e5),
     uwevents=100000,
+    loss='myloss5',
     verbose=1,
     callbacks=None,
     learning_rate=0.0001,
+    outactivation='sigmoid',
+    confthres=0.2
 ):
-    global NNREG
-    NNREG = 2
-    nreg = NNREG
+    nreg = 2
     nini = int(npts)
+    if outactivation == 'sigmoid':
+        factmin = 0.0
+        factmax = 1.0
+    elif outactivation == 'tanh':
+        factmin = -1.0
+        factmax = 1.0
+    else:
+        raise ValueErrror("'outactivation' should be 'sigmoid' or 'tanh'")
+
+    factrange = factmax - factmin
+
     fmmnta, preweights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(
         energy=ENERGY, npts=nini
     )
@@ -321,27 +387,30 @@ def itertrain2(
     xini, yini, wini = get_train_xy(fmmnta, weights, lims)
 
     # =================================================
+    losshere = lossgen(nreg, loss, outactivation)
     modelh = Sequential()
-    modelh.add(Dense(NNREG*64, input_shape=(indim,), activation='relu'))
-    modelh.add(Dense(NNREG*32, activation='relu'))
-    modelh.add(Dense(NNREG*16, activation='relu'))
-    modelh.add(Dense(NNREG*8, activation='relu'))
-    modelh.add(Dense(NNREG*4, activation='relu'))
-    modelh.add(Dense(NNREG*2, activation='relu'))
+    modelh.add(Dense(nreg*64, input_shape=(indim,), activation='relu'))
+    modelh.add(Dense(nreg*32, activation='relu'))
+    modelh.add(Dense(nreg*16, activation='relu'))
+    modelh.add(Dense(nreg*8, activation='relu'))
+    modelh.add(Dense(nreg*4, activation='relu'))
+    modelh.add(Dense(nreg*2, activation='relu'))
     # relu or sigmoid?
     # if relu, put values larger than higher class into higher class
     # modelh.add(Dense(1, activation='relu'))
     # if sigmoid...
-    modelh.add(Dense(1, activation='sigmoid'))
+    modelh.add(Dense(1, activation=outactivation))
 
     adam = Adam(learning_rate=learning_rate)
-    modelh.compile(optimizer=adam, loss=loss)
+    modelh.compile(optimizer=adam, loss=losshere)
     # =================================================
 
     if learning_rate is not None:
         modelh.optimizer.learning_rate.assign(learning_rate)
+
+    yinimap = region_actfunc(yini, nreg, outactivation)
     modelh.fit(
-        xini, yini/(nreg - 1),
+        xini, yinimap,
         epochs=epochs, batch_size=batch_size, verbose=verbose,
         callbacks=callbacks
     )
@@ -375,9 +444,11 @@ def itertrain2(
             energy=np.array(Eqlims[nlims - 2]), npts=int(npts_iter)
         )
 
-        guess_n = modelh(inputtrans(fmmnta_n)).numpy()*(nreg_n - 1)
-        guessr_n = np.round(guess_n)
-        fltr_conf = np.abs(guess_n - guessr_n) > 0.2
+        fmtt_n = inputtrans(fmmnta_n)
+        guess_n = modelh.predict(fmtt_n, batch_size=batch_size)
+        guess_n2 = (nreg_n - 1)*(guess_n - factmin)/factrange
+        guessr_n = np.round(guess_n2).astype(int)
+        fltr_conf = np.abs(guess_n2 - guessr_n) > confthres
         # TODO Can this selection of points be improved
         fltr_higher = guessr_n > max(0, nlims - 3)
         print("Added confusing points:", fltr_conf.sum())
@@ -402,8 +473,7 @@ def itertrain2(
                 target=uwevents/(np.sqrt(10)**(tstep + 1))
             )
             lims = np.array(list(lims[:-1]) + [mlim] + [weights_sv.max()])
-            NNREG = lims.shape[0] - 1
-            nreg_n = NNREG
+            nreg_n = lims.shape[0] - 1
         else:
             lims[-1] = weights_sv.max()
 
@@ -426,40 +496,45 @@ def itertrain2(
 
         # =================================================
         if tstep < subdivsteps:
+            losshere = lossgen(nreg_n, loss, outactivation)
             modelh = Sequential()
-            modelh.add(Dense(NNREG*64, input_shape=(indim,), activation='relu'))
-            modelh.add(Dense(NNREG*32, activation='relu'))
-            modelh.add(Dense(NNREG*16, activation='relu'))
-            modelh.add(Dense(NNREG*8, activation='relu'))
-            modelh.add(Dense(NNREG*4, activation='relu'))
-            modelh.add(Dense(NNREG*2, activation='relu'))
+            modelh.add(Dense(nreg_n*64, input_shape=(indim,), activation='relu'))
+            modelh.add(Dense(nreg_n*32, activation='relu'))
+            modelh.add(Dense(nreg_n*16, activation='relu'))
+            modelh.add(Dense(nreg_n*8, activation='relu'))
+            modelh.add(Dense(nreg_n*4, activation='relu'))
+            modelh.add(Dense(nreg_n*2, activation='relu'))
             # relu or sigmoid?
             # if relu, put values larger than higher class into higher class
             # modelh.add(Dense(1, activation='relu'))
             # if sigmoid...
-            modelh.add(Dense(1, activation='sigmoid'))
+            modelh.add(Dense(1, activation=outactivation))
 
             adam = Adam(learning_rate=learning_rate)
-            modelh.compile(optimizer=adam, loss=loss)
+            modelh.compile(optimizer=adam, loss=losshere)
         # =================================================
 
         # modelh.optimizer.learning_rate.assign(0.0001/(tstep + 1)/2)
+        ynmap = region_actfunc(y_n, nreg_n, outactivation)
         modelh.fit(
-            x_n, y_n/(nreg_n - 1),
+            x_n, ynmap,
             epochs=epochs, batch_size=batch_size, verbose=verbose,
             callbacks=callbacks
         )
 
-    return nreg_n, lims, w_n, x_n, y_n, fmmnta_train, weights_train, modelh, Eqlims
+    def modelpredict(fourmomenta, batch_size=batch_size):
+        fm_t = inputtrans(fourmomenta)
+        pred0 = modelh.predict(fm_t, batch_size=batch_size)
+        pred1 = actfunc_region(pred0, nreg_n, outactivation)
+        return pred1
+
+    return nreg_n, lims, w_n, x_n, y_n, fmmnta_train, weights_train, modelh, Eqlims, modelpredict
 
 
 # %% TESTING
 
-# loss = 'mae'
-# loss = 'mse'
-loss = myloss5
+loss = 'myloss5'
 learning_rate = 0.0001
-# nreg = 7
 
 # TODO Define a model here or recreate the model when more limits are created?
 # mdl = Sequential()
@@ -497,15 +572,17 @@ verbose = 0
 #   decide where to create the first division
 # epochs, batch_size, verbose, callbacks follow their meaning in fit function
 #   of keras
-nreg, lims, wtst, xtst, ytst, fmtst, wghttst, mdl, Eqlim = itertrain2(
+nreg, lims, wtst, xtst, ytst, fmtst, wghttst, mdl, Eqlim, mdlpred = itertrain2(
     None, 13, 9,
     npts=1e5,
     npts_iter=1e6,
     epochs=1000,
     uwevents=100000,
+    loss=loss,
     batch_size=batch_size,
     verbose=verbose,
-    callbacks=stopper
+    callbacks=stopper,
+    outactivation='tanh'
 )
 
 # Check results for training data
@@ -521,10 +598,7 @@ td4mg1, w1, ncut1 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[1], npts=n1)
 tw1 = get_weights(td4mg1, w1)
 
 sdind1, cnts1 = functions.divindx(tw1, lims)
-td4mgt1 = inputtrans(td4mg1)
-
-guess1 = mdl(td4mgt1).numpy()
-guessr1 = np.round(guess1*(nreg - 1)).astype(int)
+guessr1 = mdlpred(td4mg1)
 diff = np.abs(guessr1 - sdind1)
 
 # plt.hist(diff)
@@ -586,9 +660,7 @@ nvols = int(1e6)
 for j in range(nreg):
     td4mgvol, wvol, ncutvol = TGPS_m2p.qqee_gen_ph_spc_fast(
         energy=Eqlim[j], npts=nvols)
-    td4mgtvol = inputtrans(td4mgvol)
-    # guess2 = np.round(mdl(td4mgt2).numpy()*(nreg - 1)).astype(int)
-    guessvol = np.round(mdl.predict(td4mgtvol, batch_size=10000)*(nreg - 1)).astype(int)
+    guessvol = mdlpred(td4mgvol)
 
     if j + 1 < nreg:
         Eqlim[j + 1] = np.array([
@@ -624,10 +696,7 @@ print("Region importances", imprtncs1)
 
 n2 = int(1e7)
 td4mg2, w2, ncut2 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[1], npts=n2)
-
-td4mgt2 = inputtrans(td4mg2)
-# guess2 = np.round(mdl(td4mgt2).numpy()*(nreg - 1)).astype(int)
-guess2 = np.round(mdl.predict(td4mgt2, batch_size=10000)*(nreg - 1)).astype(int)
+guess2 = mdlpred(td4mg2)
 weights2_f = get_weights(td4mg2[guess2.flatten() > 0], w2[guess2.flatten() > 0])
 
 mee2_f = mee_invariant(td4mg2[guess2.flatten() > 0])
@@ -653,8 +722,7 @@ guesssv = np.empty((0, 1))
 # =======================
 for j in range(nreg - 1):
     td4mg_0, w_0, ncut_0 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[j], npts=nstart)
-    td4mgt_0 = inputtrans(td4mg_0)
-    guess_0 = np.round(mdl.predict(td4mgt_0, batch_size=10000)*(nreg - 1)).astype(int)
+    guess_0 = mdlpred(td4mg_0)
     weights_0 = get_weights(td4mg_0, w_0)
 
     fmmntsv = np.append(fmmntsv, td4mg_0, axis=0)
@@ -715,8 +783,7 @@ for k in range(nreg):
         else:
             uselims = k
         td4mg_0, w_0, ncut_0 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[uselims], npts=nstart)
-        td4mgt_0 = inputtrans(td4mg_0)
-        guess_0 = np.round(mdl.predict(td4mgt_0, batch_size=10000)*(nreg - 1)).astype(int)
+        guess_0 = mdlpred(td4mg_0)
 
         # Number of region that needs oversampling (k)
         fltr = (guess_0.flatten() == k)
