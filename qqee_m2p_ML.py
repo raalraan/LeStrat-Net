@@ -647,7 +647,6 @@ mee2_f = mee_invariant(td4mg2[guess2.flatten() > 0])
 nstart = int(4e5)
 fmmntsv = np.empty((0, 4, 4))
 weightssv = np.empty((0))
-wghtsum = []
 guesssv = np.empty((0, 1))
 # Eqlim = [[ENERGY/2.0, ENERGY/2.0]]
 # =======================
@@ -661,13 +660,12 @@ for j in range(nreg - 1):
     weightssv = np.append(weightssv, weights_0, axis=0)
     guesssv = np.append(guesssv, guess_0, axis=0)
 
-    wghtsum += [weightssv[guesssv.flatten() == j + 1].sum()]
+    if j + 1 < nreg:
+        Eqlim[j + 1] = np.array([
+                Eqlim[j + 1],
+                fmmntsv[guesssv.flatten() == j + 1][:, :2, 0].max(axis=0)
+            ]).max(axis=0)
 
-    Eqlim[j] = fmmntsv[guesssv.flatten() == j][:, :2, 0].max(axis=0)
-
-# wghtsum = [weightssv[guesssv.flatten() == j + 1].sum() for j in range(nreg - 1)]
-
-wghtsum = np.array(wghtsum)
 
 # %%
 
