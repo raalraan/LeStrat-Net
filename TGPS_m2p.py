@@ -103,7 +103,7 @@ def qqee_gen_ph_spc(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
     return thedata4mg, weights, cutpts
 
 
-# TODO By default, apply no cuts: cutptl=0, cutetal=infinity???
+# TODO This would be better as an instantiable class or wrapped in another def
 def qqee_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
     if type(energy) in (float, int):
         energy1 = float(energy)/2.0
@@ -121,13 +121,13 @@ def qqee_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
 
     jgps = ROOT.gen_qqee_space(energy1, energy2, npts, cutptl, cutetal, rseed)
 
-    weights = np.array(jgps.weight)
+    weights = np.asarray(jgps.weight)
 
-    enbeam1 = np.array(jgps.Ebeam1)
-    enbeam2 = np.array(jgps.Ebeam2)
-    pex = np.array(jgps.pex)
-    pey = np.array(jgps.pey)
-    pez = np.array(jgps.pez)
+    enbeam1 = np.asarray(jgps.Ebeam1)
+    enbeam2 = np.asarray(jgps.Ebeam2)
+    pex = np.asarray(jgps.pex)
+    pey = np.asarray(jgps.pey)
+    pez = np.asarray(jgps.pez)
 
     ppz = enbeam1 - enbeam2 - pez
     pem = np.sqrt(pex**2 + pey**2 + pez**2)
@@ -141,6 +141,103 @@ def qqee_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
         pem, pex, pey, pez,
         ppm, -pex, -pey, ppz,
      ]).T.reshape((npts, 4, 4))
+
+    return events, weights, int(jgps.cutpts)
+
+
+def gg4u4d4b_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptjet=1e-6):
+    if type(energy) in (float, int):
+        energy1 = float(energy)/2.0
+        energy2 = float(energy)/2.0
+    elif len(energy) == 2:
+        energy1 = energy[0]
+        energy2 = energy[1]
+    else:
+        print("Type of parameter 'energy' not recognized:", type(energy))
+        print("Setting both quarks 'energy' as half of:", energy)
+        energy1 = energy/2.0
+        energy2 = energy/2.0
+
+    rseed = np.random.randint(1, 100000000)
+
+    # cutetajet = np.inf is a dummy argument for now
+    jgps = ROOT.gen_gg4u4d4b_space(energy1, energy2, npts, cutptjet, np.inf, rseed)
+
+    weights = np.asarray(jgps.weight)
+
+    enbeam1 = np.asarray(jgps.Ebeam1)
+    enbeam2 = np.asarray(jgps.Ebeam2)
+
+    pu1x, pu1y, pu1z = np.asarray(jgps.pu1x), np.asarray(jgps.pu1y), np.asarray(jgps.pu1z)
+    pd1x, pd1y, pd1z = np.asarray(jgps.pd1x), np.asarray(jgps.pd1y), np.asarray(jgps.pd1z)
+    pb1x, pb1y, pb1z = np.asarray(jgps.pb1x), np.asarray(jgps.pb1y), np.asarray(jgps.pb1z)
+
+    pu2x, pu2y, pu2z = np.asarray(jgps.pu2x), np.asarray(jgps.pu2y), np.asarray(jgps.pu2z)
+    pd2x, pd2y, pd2z = np.asarray(jgps.pd2x), np.asarray(jgps.pd2y), np.asarray(jgps.pd2z)
+    pb2x, pb2y, pb2z = np.asarray(jgps.pb2x), np.asarray(jgps.pb2y), np.asarray(jgps.pb2z)
+
+    pu3x, pu3y, pu3z = np.asarray(jgps.pu3x), np.asarray(jgps.pu3y), np.asarray(jgps.pu3z)
+    pd3x, pd3y, pd3z = np.asarray(jgps.pd3x), np.asarray(jgps.pd3y), np.asarray(jgps.pd3z)
+    pb3x, pb3y, pb3z = np.asarray(jgps.pb3x), np.asarray(jgps.pb3y), np.asarray(jgps.pb3z)
+
+    pu4x, pu4y, pu4z = np.asarray(jgps.pu4x), np.asarray(jgps.pu4y), np.asarray(jgps.pu4z)
+    pd4x, pd4y, pd4z = np.asarray(jgps.pd4x), np.asarray(jgps.pd4y), np.asarray(jgps.pd4z)
+    pb4x = -(
+        pu1x + pd1x + pb1x
+        + pu2x + pd2x + pb2x
+        + pu3x + pd3x + pb3x
+        + pu4x + pd4x
+    )
+    pb4y = -(
+        pu1y + pd1y + pb1y
+        + pu2y + pd2y + pb2y
+        + pu3y + pd3y + pb3y
+        + pu4y + pd4y
+    )
+    pb4y = -(
+        pu1y + pd1y + pb1y
+        + pu2y + pd2y + pb2y
+        + pu3y + pd3y + pb3y
+        + pu4y + pd4y
+    )
+    pb4z = enbeam1 - enbeam2 - (
+        pu1z + pd1z + pb1z
+        + pu2z + pd2z + pb2z
+        + pu3z + pd3z + pb3z
+        + pu4z + pd4z
+    )
+
+    Eu1 = np.sqrt(pu1x**2 + pu1y**2 + pu1z**2)
+    Ed1 = np.sqrt(pd1x**2 + pd1y**2 + pd1z**2)
+    Eb1 = np.sqrt(pb1x**2 + pb1y**2 + pb1z**2 + MB**2)
+    Eu2 = np.sqrt(pu2x**2 + pu2y**2 + pu2z**2)
+    Ed2 = np.sqrt(pd2x**2 + pd2y**2 + pd2z**2)
+    Eb2 = np.sqrt(pb2x**2 + pb2y**2 + pb2z**2 + MB**2)
+    Eu3 = np.sqrt(pu3x**2 + pu3y**2 + pu3z**2)
+    Ed3 = np.sqrt(pd3x**2 + pd3y**2 + pd3z**2)
+    Eb3 = np.sqrt(pb3x**2 + pb3y**2 + pb3z**2 + MB**2)
+    Eu4 = np.sqrt(pu4x**2 + pu4y**2 + pu4z**2)
+    Ed4 = np.sqrt(pd4x**2 + pd4y**2 + pd4z**2)
+    Eb4 = np.sqrt(pb4x**2 + pb4y**2 + pb4z**2 + MB**2)
+
+    zeros = np.zeros((npts))
+
+    events = np.array([
+        enbeam1, zeros, zeros, enbeam1,
+        enbeam2, zeros, zeros, -enbeam2,
+        Eu1, pu1x, pu1y, pu1z,
+        Ed1, pd1x, pd1y, pd1z,
+        Eb1, pb1x, pb1y, pb1z,
+        Eu2, pu2x, pu2y, pu2z,
+        Ed2, pd2x, pd2y, pd2z,
+        Eb2, pb2x, pb2y, pb2z,
+        Eu3, pu3x, pu3y, pu3z,
+        Ed3, pd3x, pd3y, pd3z,
+        Eb3, pb3x, pb3y, pb3z,
+        Eu4, pu4x, pu4y, pu4z,
+        Ed4, pd4x, pd4y, pd4z,
+        Eb4, pb4x, pb4y, pb4z,
+    ]).T.reshape((npts, 14, 4))
 
     return events, weights, int(jgps.cutpts)
 
