@@ -83,3 +83,11 @@ def divindx(res, lims):
     # indices[res <= lims[0]] = 0
     # indices[res > lims[-1]] = len(lims) - 2
     return indices.reshape((indices.shape[0], 1)), counts.astype(int)
+
+
+def lbins(limini, limend, nbins=100):
+    return np.logspace(
+        np.log10(limini),
+        np.log10(limend),
+        nbins + 1
+    )

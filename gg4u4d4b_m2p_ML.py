@@ -20,7 +20,10 @@ import uproot as ur
 ENERGY = TGPS_m2p.ENERGY
 
 # Actual independent indices in 4-momentum input to madgraph
-indindx = np.array([0, 4, 9, 10, 11])
+indindx = np.delete(list(range(8, 13*4)), range(0, 11*4, 4))
+# Add quark energy
+indindx = np.append([0, 4], indindx)
+
 p23 = TGPS_m2p.p23
 
 # %% Relevant definitions
@@ -29,7 +32,7 @@ p23 = TGPS_m2p.p23
 # Keep only independent components of 4-momentum input
 def inputtrans(x):
     nx = x.shape[0]
-    newx = x.reshape(nx, 4*4)
+    newx = x.reshape(nx, 14*4)
     xind = newx[:, indindx]/ENERGY*2
     return xind
 
@@ -49,8 +52,8 @@ def get_weights(momenta, weights, factors=None):
     pdf1 = np.empty(ndata)
     pdf2 = np.empty(ndata)
     for j in range(ndata):
-        pdf1[j] = p23.xfxQ2(2, x1[j], q2s[j])/x1[j]/momenta[j, 0, 0]
-        pdf2[j] = p23.xfxQ2(-2, x2[j], q2s[j])/x2[j]/momenta[j, 1, 0]
+        pdf1[j] = p23.xfxQ2(21, x1[j], q2s[j])/x1[j]/momenta[j, 0, 0]
+        pdf2[j] = p23.xfxQ2(21, x2[j], q2s[j])/x2[j]/momenta[j, 1, 0]
 
     tws = weights*wgws*pdf1*pdf2
     tws[tws < 0.0] = 0.0
@@ -58,14 +61,6 @@ def get_weights(momenta, weights, factors=None):
         return tws
     else:
         return tws, wgws, pdf1, pdf2
-
-
-def mee_invariant(momenta):
-    fm_sum = momenta[:, 2] + momenta[:, 3]
-    mee_inv = np.sqrt(
-        fm_sum[:, 0]**2 - (fm_sum[:, 1]**2 + fm_sum[:, 2]**2 + fm_sum[:, 3]**2)
-    )
-    return mee_inv
 
 
 # %%
@@ -175,7 +170,7 @@ def itertrain(
     global NNREG
     NNREG = nreg
     nini = int(npts)
-    fmmnta, weights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(
+    fmmnta, weights, ncut = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
         energy=ENERGY,
         npts=nini
     )
@@ -197,7 +192,7 @@ def itertrain(
     weights_sv = weights_tot
     fmmnta_sv = fmmnta
     for tstep in range(trainsteps - 1):
-        fmmnta_n, weights_n, ncut_n = TGPS_m2p.qqee_gen_ph_spc_fast(
+        fmmnta_n, weights_n, ncut_n = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
             energy=ENERGY, npts=nini)
         # Get guessed classes
         guess_n = model(inputtrans(fmmnta_n)).numpy()*(nreg - 1)
@@ -261,7 +256,8 @@ def get_lims_test(weights, target=10.0):
         upsum = wsrt[lw - j:].sum()
         # sum lower part
         lpsum = wsrt[:lw - j].sum()
-        if upsum/lpsum > target:
+        rat_post = upsum/lpsum
+        if rat_post > target:
             # print(
             #     lw - j,
             #     wsrt[lw - j],
@@ -273,16 +269,28 @@ def get_lims_test(weights, target=10.0):
             #     wsrt[lw - j + 1:].sum()/wsrt[:lw - j + 1].sum()
             # )
             rat_prev = wsrt[lw - j + 1:].sum()/wsrt[:lw - j + 1].sum()
-            rat_post = wsrt[lw - j:].sum()/wsrt[:lw - j].sum()
             break
+        if j == lw - 1 and upsum/lpsum < target:
+            print(
+                "get_lims_test: target could not get achieved",
+                upsum/lpsum
+            )
     # print([rat_prev, rat_post])
     # print([wsrt[lw - j + 1], wsrt[lw - j]])
-    tarinterp = np.interp(
-        target,
-        [rat_prev, rat_post],
-        [wsrt[lw - j + 1], wsrt[lw - j]]
-    )
+    # print("get_lims_test:", lw, j, rat_prev, rat_post, target)
+    try:
+        tarinterp = np.interp(
+            target,
+            [rat_prev, rat_post],
+            [wsrt[lw - j], wsrt[lw - j - 1]]
+        )
+    except:
+        import pdb; pdb.set_trace()
+        breakpoint()
     return tarinterp
+
+
+testseq = [100000, 11000, 1000]
 
 
 # Second proposal for iterative training
@@ -293,6 +301,7 @@ def itertrain2(
     npts=int(1e5),
     npts_iter=int(1e5),
     uwevents=100000,
+    loss=myloss5,
     verbose=1,
     callbacks=None,
     learning_rate=0.0001,
@@ -301,25 +310,25 @@ def itertrain2(
     NNREG = 2
     nreg = NNREG
     nini = int(npts)
-    fmmnta, preweights, ncut = TGPS_m2p.qqee_gen_ph_spc_fast(
+    fmmnta, preweights, ncut = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
         energy=ENERGY, npts=nini
     )
     weights = get_weights(fmmnta, preweights)
     # The first limit should separate a region with enough importance for
     # unweighted events
-    mlim = get_lims_test(weights, target=uwevents)
+    mlim = get_lims_test(weights, target=testseq[0])
     lims = np.array([0.0, mlim, weights.max()])
 
     xini, yini, wini = get_train_xy(fmmnta, weights, lims)
 
     # =================================================
     modelh = Sequential()
-    modelh.add(Dense(NNREG*64, input_shape=(indim,), activation='relu'))
+    modelh.add(Dense(NNREG*128, input_shape=(indim,), activation='relu'))
+    modelh.add(Dense(NNREG*64, activation='relu'))
     modelh.add(Dense(NNREG*32, activation='relu'))
     modelh.add(Dense(NNREG*16, activation='relu'))
     modelh.add(Dense(NNREG*8, activation='relu'))
     modelh.add(Dense(NNREG*4, activation='relu'))
-    modelh.add(Dense(NNREG*2, activation='relu'))
     # relu or sigmoid?
     # if relu, put values larger than higher class into higher class
     # modelh.add(Dense(1, activation='relu'))
@@ -332,11 +341,12 @@ def itertrain2(
 
     if learning_rate is not None:
         modelh.optimizer.learning_rate.assign(learning_rate)
-    modelh.fit(
-        xini, yini/(nreg - 1),
-        epochs=epochs, batch_size=batch_size, verbose=verbose,
-        callbacks=callbacks
-    )
+    with tf.device('GPU:0'):
+        modelh.fit(
+            xini, yini/(nreg - 1),
+            epochs=epochs, batch_size=batch_size, verbose=verbose,
+            callbacks=callbacks
+        )
 
     nreg_n = nreg
     x_n = xini
@@ -360,25 +370,54 @@ def itertrain2(
     # =============== LOOP WILL START HERE =================
     # tstep = 0
 
-    # TODO test with limits on quark energy
+    # TODO test with limits on gluon energy
+    tam = 1
     for tstep in range(trainsteps):
         nlims = len(Eqlims)
-        fmmnta_n, preweights_n, ncut_n = TGPS_m2p.qqee_gen_ph_spc_fast(
-            energy=np.array(Eqlims[nlims - 2]), npts=int(npts_iter)
-        )
+        n_both = 0
+        n_higher = 0
+        n_top = 0
+        # TODO Best than 10000
+        fmmnta_nf = np.empty((0, fmmnta.shape[1], fmmnta.shape[2]))
+        preweights_nf = np.empty((0,))
+        while n_both < 10000 or n_top < 500:
+            fmmnta_n, preweights_n, ncut_n = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
+                energy=np.array(Eqlims[nlims - 2]), npts=int(npts_iter*tam)
+            )
 
-        guess_n = modelh(inputtrans(fmmnta_n)).numpy()*(nreg_n - 1)
-        guessr_n = np.round(guess_n)
-        fltr_conf = np.abs(guess_n - guessr_n) > 0.2
-        # TODO Can this selection of points be improved
-        fltr_higher = guessr_n > max(0, nlims - 3)
-        print("Added confusing points:", fltr_conf.sum())
-        print("Added high importance points:", fltr_higher.sum())
-        print("Points in higher importance level:", (guessr_n > nlims - 2).sum())
-        fltr_both = np.logical_or(fltr_higher, fltr_conf).flatten()
+            fmmntat_n = inputtrans(fmmnta_n)
+            with tf.device('CPU:0'):
+                guess_n = modelh.predict(fmmntat_n, batch_size=100000)*(nreg_n - 1)
+            guessr_n = np.round(guess_n)
+            fltr_conf = np.abs(guess_n - guessr_n) > 0.2
+            # TODO Can this selection of points be improved
+            fltr_higher = guessr_n > max(0, nlims - 3)
+            fltr_both = np.logical_or(fltr_higher, fltr_conf).flatten()
+            fltr_top = guessr_n > nlims - 2
+            n_top += fltr_top.sum()
+            if n_both < 10000:
+                fmmnta_nf = np.append(fmmnta_nf, fmmnta_n[fltr_both], axis=0)
+                preweights_nf = np.append(preweights_nf, preweights_n[fltr_both])
+                n_both += fltr_both.sum()
+                n_higher += fltr_higher.sum()
+                print("Added confusing points:", fltr_conf.sum())
+                print("Added high importance points:", fltr_higher.sum())
+                print("Added higher importance points:", fltr_top.sum())
+            else:
+                fmmnta_nf = np.append(fmmnta_nf, fmmnta_n[fltr_higher.flatten()], axis=0)
+                preweights_nf = np.append(preweights_nf, preweights_n[fltr_higher.flatten()])
+                n_higher += fltr_higher.sum()
+                print("Added high importance points:", fltr_higher.sum())
+                print("Added higher importance points:", fltr_top.sum())
+            tam *= 2
+            tam = min(tam, 16)
+        # print("Points in higher importance level:", (guessr_n > nlims - 2).sum())
+        print("Number of points that will be added:", preweights_nf.shape[0])
+
 
         fmmnta_nf = fmmnta_n[fltr_both]
         preweights_nf = preweights_n[fltr_both]
+
         weights_nf = get_weights(fmmnta_nf, preweights_nf)
         fltr_nreg2 = weights_nf > lims[-2]
         fmmnta_sv = np.append(fmmnta_sv, fmmnta_nf[fltr_nreg2], axis=0)
@@ -391,7 +430,7 @@ def itertrain2(
             # target number of regions
             mlim = get_lims_test(
                 weights_sv[weights_sv > lims[-2]],
-                target=uwevents/(np.sqrt(10)**(tstep + 1))
+                target=testseq[tstep + 1]
             )
             lims = np.array(list(lims[:-1]) + [mlim] + [weights_sv.max()])
             NNREG = lims.shape[0] - 1
@@ -419,12 +458,12 @@ def itertrain2(
         # =================================================
         if tstep < subdivsteps:
             modelh = Sequential()
-            modelh.add(Dense(NNREG*64, input_shape=(indim,), activation='relu'))
+            modelh.add(Dense(NNREG*128, input_shape=(indim,), activation='relu'))
+            modelh.add(Dense(NNREG*64, activation='relu'))
             modelh.add(Dense(NNREG*32, activation='relu'))
             modelh.add(Dense(NNREG*16, activation='relu'))
             modelh.add(Dense(NNREG*8, activation='relu'))
             modelh.add(Dense(NNREG*4, activation='relu'))
-            modelh.add(Dense(NNREG*2, activation='relu'))
             # relu or sigmoid?
             # if relu, put values larger than higher class into higher class
             # modelh.add(Dense(1, activation='relu'))
@@ -436,11 +475,12 @@ def itertrain2(
         # =================================================
 
         # modelh.optimizer.learning_rate.assign(0.0001/(tstep + 1)/2)
-        modelh.fit(
-            x_n, y_n/(nreg_n - 1),
-            epochs=epochs, batch_size=batch_size, verbose=verbose,
-            callbacks=callbacks
-        )
+        with tf.device('GPU:0'):
+            modelh.fit(
+                x_n, y_n/(nreg_n - 1),
+                epochs=epochs, batch_size=batch_size, verbose=verbose,
+                callbacks=callbacks
+            )
 
     return nreg_n, lims, w_n, x_n, y_n, fmmnta_train, weights_train, modelh, Eqlims
 
@@ -449,7 +489,7 @@ def itertrain2(
 
 # loss = 'mae'
 # loss = 'mse'
-loss = myloss5
+loss = myloss4
 learning_rate = 0.0001
 # nreg = 7
 
@@ -479,9 +519,9 @@ verbose = 0
 #     batch_size=batch_size,
 #     verbose=verbose,
 # )
-# 13: Train 13 times
-# 9: of those 13, 9 make a new division, since we start with 2 divisions this
-#   means 11 divisions or 10 regions
+# 10: Train 10 times
+# 4: of those 10, 4 make a new division, since we start with 2 divisions this
+#   means 6 divisions or 5 regions
 # npts: number of points used in first run and training
 # npts_iter: number of points tested in iteration steps.  They will be
 #   filtered by the NN
@@ -490,10 +530,11 @@ verbose = 0
 # epochs, batch_size, verbose, callbacks follow their meaning in fit function
 #   of keras
 nreg, lims, wtst, xtst, ytst, fmtst, wghttst, mdl, Eqlim = itertrain2(
-    None, 13, 9,
+    None, 10, len(testseq) - 1,
     npts=1e5,
     npts_iter=1e6,
     epochs=1000,
+    loss=loss,
     uwevents=100000,
     batch_size=batch_size,
     verbose=verbose,
@@ -508,8 +549,8 @@ nreg, lims, wtst, xtst, ytst, fmtst, wghttst, mdl, Eqlim = itertrain2(
 
 # %%
 
-n1 = int(1e6)
-td4mg1, w1, ncut1 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[1], npts=n1)
+n1 = int(1e5)
+td4mg1, w1, ncut1 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(energy=Eqlim[4], npts=n1)
 tw1 = get_weights(td4mg1, w1)
 
 sdind1, cnts1 = functions.divindx(tw1, lims)
@@ -576,7 +617,7 @@ njregnew = np.empty(nreg)
 njregprev = np.empty(nreg)
 nvols = int(1e6)
 for j in range(nreg):
-    td4mgvol, wvol, ncutvol = TGPS_m2p.qqee_gen_ph_spc_fast(
+    td4mgvol, wvol, ncutvol = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
         energy=Eqlim[j], npts=nvols)
     td4mgtvol = inputtrans(td4mgvol)
     # guess2 = np.round(mdl(td4mgt2).numpy()*(nreg - 1)).astype(int)
@@ -615,7 +656,7 @@ print("Region importances", imprtncs1)
 # %%
 
 n2 = int(1e7)
-td4mg2, w2, ncut2 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[1], npts=n2)
+td4mg2, w2, ncut2 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(energy=Eqlim[1], npts=n2)
 
 td4mgt2 = inputtrans(td4mg2)
 # guess2 = np.round(mdl(td4mgt2).numpy()*(nreg - 1)).astype(int)
@@ -643,7 +684,7 @@ guesssv = np.empty((0, 1))
 # Eqlim = [[ENERGY/2.0, ENERGY/2.0]]
 # =======================
 for j in range(nreg - 1):
-    td4mg_0, w_0, ncut_0 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[j], npts=nstart)
+    td4mg_0, w_0, ncut_0 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(energy=Eqlim[j], npts=nstart)
     td4mgt_0 = inputtrans(td4mg_0)
     guess_0 = np.round(mdl.predict(td4mgt_0, batch_size=10000)*(nreg - 1)).astype(int)
     weights_0 = get_weights(td4mg_0, w_0)
@@ -704,7 +745,7 @@ for k in range(nreg):
             uselims = k - 1
         else:
             uselims = k
-        td4mg_0, w_0, ncut_0 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[uselims], npts=nstart)
+        td4mg_0, w_0, ncut_0 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(energy=Eqlim[uselims], npts=nstart)
         td4mgt_0 = inputtrans(td4mg_0)
         guess_0 = np.round(mdl.predict(td4mgt_0, batch_size=10000)*(nreg - 1)).astype(int)
 
@@ -745,13 +786,6 @@ for k in range(nreg):
 
 # %%
 
-dummeesv = np.empty((0))
-for k in range(nreg):
-    dummeesv = np.append(
-        dummeesv,
-        meesv[guesssv.flatten() == k][filt_ar[k]][:int(reqevs[k])]
-    )
-
 fmmnt_accrej = np.empty((0, 4, 4))
 for k in range(nreg):
     fmmnt_accrej = np.append(
@@ -760,142 +794,5 @@ for k in range(nreg):
         axis=0
     )
 
-np.savetxt("mlevents.csv", fmmnt_accrej.reshape((nevents, 16)))
-# read with np.loadtxt("mlevents.csv").reshape((nevents, 4, 4))
-
-# %%
-
-meesv_divs = [
-    meesv[guesssv.flatten() == j][filt_ar[j]][:int(reqevs[j])]
-    for j in range(nreg)
-]
-
-plt.hist(
-    meesv_divs,
-    bins=functions.lbins(20, 1200, 100),
-    stacked=True,
-    # density=True,
-    # histtype='step'
-)
-plt.xlim(20, 1200)
-plt.yscale('log')
-plt.xscale('log')
-plt.savefig("regions.pdf")
-
-# %% MADGRAPH
-
-myevents = ur.open("../../../qqee_rw/Events/run_02/unweighted_events.root")
-
-qqee_evs = myevents['LHEF;1']['Particle'].arrays(library="np")
-nevs = qqee_evs['Particle.E'].shape[0]
-
-qqee_evs_ak = myevents['LHEF;1']['Particle'].arrays(library="ak")
-# nevs = qqee_evs_ak['Particle.E'].shape[0]
-
-Uev = qqee_evs_ak[qqee_evs_ak['Particle.PID'] == 2]
-Ubev = qqee_evs_ak[qqee_evs_ak['Particle.PID'] == -2]
-Elev = qqee_evs_ak[qqee_evs_ak['Particle.PID'] == 11]
-Poev = qqee_evs_ak[qqee_evs_ak['Particle.PID'] == -11]
-# Zev = qqee_evs_ak[qqee_evs_ak['Particle.PID'] == -23]
-
-Eu1 = Uev['Particle.E'].to_numpy().flatten()
-Eu2 = Ubev['Particle.E'].to_numpy().flatten()
-Ee1 = Elev['Particle.E'].to_numpy().flatten()
-Ee2 = Poev['Particle.E'].to_numpy().flatten()
-
-Pxu1 = Uev['Particle.Px'].to_numpy().flatten()
-Pyu1 = Uev['Particle.Py'].to_numpy().flatten()
-Pzu1 = Uev['Particle.Pz'].to_numpy().flatten()
-
-Pxu2 = Ubev['Particle.Px'].to_numpy().flatten()
-Pyu2 = Ubev['Particle.Py'].to_numpy().flatten()
-Pzu2 = Ubev['Particle.Pz'].to_numpy().flatten()
-
-Pxe1 = Elev['Particle.Px'].to_numpy().flatten()
-Pye1 = Elev['Particle.Py'].to_numpy().flatten()
-Pze1 = Elev['Particle.Pz'].to_numpy().flatten()
-P2e1 = Pxe1**2 + Pye1**2 + Pze1**2
-
-Pxe2 = Poev['Particle.Px'].to_numpy().flatten()
-Pye2 = Poev['Particle.Py'].to_numpy().flatten()
-Pze2 = Poev['Particle.Pz'].to_numpy().flatten()
-P2e2 = Pxe2**2 + Pye2**2 + Pze2**2
-
-P2ee = (Pxe1 + Pxe2)**2 + (Pye1 + Pye2)**2 + (Pze1 + Pze2)**2
-
-meemg = np.sqrt((Ee1 + Ee2)**2 - P2ee)
-
-# %%
-
-hlbins = functions.lbins(20, 600, 50)
-
-fig, (hist, error) = plt.subplots(
-    2,
-    height_ratios=[3./4., 1./4.],
-    figsize=(5, 5*4/3)
-)
-fig.suptitle(r'$u\bar{u} \to e^+ e^-$ $10^5$ events')
-mlh, mlbc, _ = hist.hist(
-    dummeesv,
-    bins=hlbins,
-    # density=True,
-    histtype='step',
-    label="This work"
-)
-mgh, mgbc, _ = hist.hist(
-    meemg,
-    bins=hlbins,
-    # density=True,
-    histtype='step',
-    label="MadGraph"
-)
-
-# mlh, mlbc, _ = plt.hist(
-#     mee2[totw2 > 0.0],
-#     weights=totw2[totw2 > 0.0],
-#     bins=hlbins,
-#     density=True,
-#     histtype='step'
-# )
-thh, thbc, _ = hist.hist(
-    mee2_f,
-    bins=hlbins,
-    histtype='step',
-    weights=weights2_f*nevents/weights2_f.sum(),
-    label="Theory"
-)
-hist.set_ylabel('Number of events')
-hist.legend()
-hist.set_xlim(20, 600)
-hist.set_ylim(9e-1, 1e5)
-hist.set_xscale('log')
-hist.set_yscale('log')
-# plt.show()
-
-# plt.figure(figsize=(5, 2))
-# error.plot(
-#     0.5*(hlbins[:-1] + hlbins[1:]),
-#     np.abs((mgh - mlh)/mgh),
-#     label="Madgraph - this work"
-# )
-error.plot(
-    0.5*(hlbins[:-1] + hlbins[1:]),
-    np.abs((thh - mlh)/thh),
-    label="Theory - this work"
-)
-error.plot(
-    0.5*(hlbins[:-1] + hlbins[1:]),
-    np.abs((thh - mgh)/thh),
-    label="Theory - Madgraph"
-)
-error.legend(loc='upper center', ncol=2)
-error.set_xlabel('$m_{ee}$ [GeV]')
-error.set_ylabel('error')
-error.set_xlim(20, 600)
-error.set_ylim(8e-4, 10)
-error.set_xscale('log')
-error.set_yscale('log')
-# plt.xscale('log')
-# plt.yscale('log')
-
-plt.savefig("events.pdf")
+np.savetxt("gg4u4d4b_mlevents.csv", fmmnt_accrej.reshape((nevents, 14*4)))
+# read with np.loadtxt("mlevents.csv").reshape((nevents, 14, 4))
