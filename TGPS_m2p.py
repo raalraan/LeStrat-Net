@@ -238,7 +238,11 @@ def gg4u4d4b_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptjet=20.0, cutptb
         Eb4, pb4x, pb4y, pb4z,
     ]).T.reshape((npts, 14, 4))
 
-    return events, weights, int(jgps.cutpts)
+    # Remove NANs
+    events = events[weights == weights]
+    weights = weights[weights == weights]
+
+    return events, weights, int(jgps.cutpts) + (weights != weights).sum()
 
 
 def gg4u4d4b_gen_ph_spc(energy=ENERGY, npts=int(1e5)):

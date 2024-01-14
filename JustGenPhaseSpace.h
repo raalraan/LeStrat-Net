@@ -174,7 +174,7 @@ gg4u4d4b_space gen_gg4u4d4b_space(
 		Double_t enbeam1 = r.Rndm()*energy1;
 		Double_t enbeam2 = r.Rndm()*energy2;
 
-		if (enbeam1 + enbeam2 < 4.*4.7)
+		if (enbeam1 + enbeam2 < 4.*173.0)
 		{
 			cutpts++;
 			continue;
