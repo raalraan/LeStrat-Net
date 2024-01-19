@@ -901,3 +901,163 @@ error.set_yscale('log')
 # plt.yscale('log')
 
 plt.savefig("events.pdf")
+
+# %%
+
+
+# %% TODO HIGH M_EE REGION
+
+# Consider regions 0 to 4
+nreg_h = 4
+# Some large number of events
+nevents_h = 1000000
+prereqevs_h = nevents_h*imprtncs1[:nreg_h]/imprtncs1[:nreg_h].sum()
+# Append 0s for the ignored regions (5 and above)
+prereqevs_h = np.append(prereqevs_h, [0]*(nreg - nreg_h))
+reqevs_rh = np.round(prereqevs_h).astype(int)
+reqevs_h = np.copy(reqevs_rh)
+
+diffevs_h = nevents_h - reqevs_rh.sum()
+if diffevs_h != 0:
+    # Add missing number of events to places where it affects the least,
+    # regions with larger number of points
+    reqevs_h[reqevs_rh.argmax()] = reqevs_rh.max() + diffevs_h
+
+# %%
+
+n_h = int(1e7)
+td4mg_h, w_h, ncut_h = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[0], npts=n_h)
+
+td4mgt_h = inputtrans(td4mg_h)
+guess_h = np.round(mdl.predict(td4mgt_h, batch_size=10000)*(nreg - 1)).astype(int)
+weights2_h = get_weights(td4mg_h[guess_h.flatten() < 6], w_h[guess_h.flatten() < 6])
+
+mee2_h = mee_invariant(td4mg_h[guess_h.flatten() < 6])
+
+fmee2_h = (mee2_h >= 500)*(mee2_h <= 2000)
+
+# %% OVERSAMPLE REGIONS THAT NEED MORE POINTS
+
+# number of region to oversample
+for k in range(nreg):
+    for j in range(200):
+        # TODO Use efficiency when acceptance rejection uses uniform distribution
+        if (guesssv == k).sum() > np.round(reqevs_h[k]/eff_ar[k]):
+            print(
+                "Region {}:".format(k),
+                "Requested number of points has been reached"
+            )
+            break
+        # Number of region that needs oversampling minus 1 (k - 1 = 5)
+        # TODO IDEA pick either k or k - 1 at random, 0.5-0.5 (coin)
+        if np.random.rand() > 0.5:
+            uselims = k - 1
+        else:
+            uselims = k
+        td4mg_0, w_0, ncut_0 = TGPS_m2p.qqee_gen_ph_spc_fast(energy=Eqlim[uselims], npts=nstart)
+        td4mgt_0 = inputtrans(td4mg_0)
+        guess_0 = np.round(mdl.predict(td4mgt_0, batch_size=10000)*(nreg - 1)).astype(int)
+
+        # Number of region that needs oversampling (k)
+        fltr = (guess_0.flatten() == k)
+
+        weights_0 = get_weights(td4mg_0[fltr], w_0[fltr])
+
+        fmmntsv = np.append(fmmntsv, td4mg_0[fltr], axis=0)
+        weightssv = np.append(weightssv, weights_0, axis=0)
+        guesssv = np.append(guesssv, guess_0[fltr], axis=0)
+
+        # Update quarks energy limits
+        Eqlim[k] = fmmntsv[guesssv.flatten() == k][:, :2, 0].max(axis=0)
+        # Eqlim[k, 1] = fmmntsv[guesssv.flatten() == k][:, 1, 0].max()
+
+        lims[-1] = max(lims[-1], max(weightssv))
+
+        print(
+            j, (guesssv == k).sum(),
+            "(+{}, {}),".format(fltr.sum(), uselims),
+            "New limits:", Eqlim[k]
+        )
+
+meesv = mee_invariant(fmmntsv)
+
+filt_ar = []
+eff_ar = []
+punif = []
+for k in range(nreg):
+    pnorm = weightssv[guesssv.flatten() == k]/lims[k + 1]
+    fpnorm = pnorm <= 1.0
+    punif += [np.random.rand(pnorm.shape[0])]
+    filt_ar += [(pnorm > punif[k])*fpnorm]
+    eff_ar += [filt_ar[k].sum()/filt_ar[k].shape[0]]
+
+fmmnt_h = np.empty((0, 4, 4))
+for k in range(nreg):
+    fmmnt_h = np.append(
+        fmmnt_h,
+        fmmntsv[guesssv.flatten() == k][filt_ar[k]][:int(reqevs_h[k])],
+        axis=0
+    )
+
+mee_h = mee_invariant(fmmnt_h)
+
+fmee_h = ((mee_h >= 500)*(mee_h <= 2000))
+fmee_h.sum()
+
+# %%
+
+np.savetxt("mlevents_high_240115.csv", fmmnt_h.reshape((nevents_h, 16)))
+
+# %%
+
+hlbins_hlog = lbins(500, 2000, 50)
+hlbins_hlin = np.linspace(400, 2000, 51)
+plt.hist(
+    mee_h[fmee_h],
+    bins=hlbins_hlin
+)
+plt.hist(
+    mee2_h[fmee2_h],
+    bins=hlbins_hlin,
+    histtype='step',
+    linestyle='dashed',
+    color='k',
+    weights=weights2_h[fmee2_h]*fmee_h.sum()/weights2_h[fmee2_h].sum(),
+    label="Theory",
+    alpha=1
+)
+plt.xlim(300, 3000)
+# plt.xscale('log')
+plt.yscale('log')
+
+mlhhlog, hlbins_h = np.histogram(
+    mee_h[fmee_h],
+    bins=hlbins_hlog
+)
+mlhhlin, hlbins_h = np.histogram(
+    mee_h[fmee_h],
+    bins=hlbins_hlin
+)
+
+thhlog, hlbins_h = np.histogram(
+    mee2_h[fmee2_h],
+    weights=weights2_h[fmee2_h]*fmee_h.sum()/weights2_h[fmee2_h].sum(),
+    bins=hlbins_hlog
+)
+thhlin, hlbins_h = np.histogram(
+    mee2_h[fmee2_h],
+    weights=weights2_h[fmee2_h]*fmee_h.sum()/weights2_h[fmee2_h].sum(),
+    bins=hlbins_hlin
+)
+
+# np.savetxt(
+#     "qqee_th_mg_ml_mlh.csv",
+#     np.array([thh, mgh, mlh, thhlog, thhlin, mlhhlog, mlhhlin])
+# )
+
+# np.savetxt(
+#     "qqee_bins.csv",
+#     np.array([hlbins, hlbins_hlog, hlbins_hlin])
+# )
+
+
