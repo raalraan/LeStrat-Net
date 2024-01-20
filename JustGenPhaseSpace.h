@@ -139,6 +139,7 @@ gg4u4d4b_space gen_gg4u4d4b_space(
 		const Double_t cutptb,
 		const Double_t cutetajet,
 		const Double_t cutetab,
+		const Double_t cutHt,
 		const int seed
 		) {
 	gg4u4d4b_space mypspace;
@@ -261,6 +262,37 @@ gg4u4d4b_space gen_gg4u4d4b_space(
 					pu3t < cutptjet || pd3t < cutptjet ||
 					pu4t < cutptjet || pd4t < cutptjet
 			   )
+			{
+				cutpts++;
+				continue;
+			}
+		}
+
+		if (cutHt > 0.0)
+		{
+			Double_t pu1t = sqrt(pu1x*pu1x + pu1y*pu1y);
+			Double_t pd1t = sqrt(pd1x*pd1x + pd1y*pd1y);
+
+			Double_t pu2t = sqrt(pu2x*pu2x + pu2y*pu2y);
+			Double_t pd2t = sqrt(pd2x*pd2x + pd2y*pd2y);
+
+			Double_t pu3t = sqrt(pu3x*pu3x + pu3y*pu3y);
+			Double_t pd3t = sqrt(pd3x*pd3x + pd3y*pd3y);
+
+			Double_t pu4t = sqrt(pu4x*pu4x + pu4y*pu4y);
+			Double_t pd4t = sqrt(pd4x*pd4x + pd4y*pd4y);
+
+			Double_t pb1t = sqrt(pb1x*pb1x + pb1y*pb1y);
+			Double_t pb2t = sqrt(pb2x*pb2x + pb2y*pb2y);
+			Double_t pb3t = sqrt(pb3x*pb3x + pb3y*pb3y);
+			Double_t pb4t = sqrt(pb4x*pb4x + pb4y*pb4y);
+
+			Double_t Ht = pu1t + pd1t + pb1t
+				+ pu2t + pd2t + pb2t
+				+ pu3t + pd3t + pb3t
+				+ pu4t + pd4t + pb4t;
+
+			if (Ht < cutHt)
 			{
 				cutpts++;
 				continue;
