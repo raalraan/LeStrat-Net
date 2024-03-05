@@ -91,3 +91,23 @@ def lbins(limini, limend, nbins=100):
         np.log10(limend),
         nbins + 1
     )
+
+
+def get_train_xy(momenta, weights, lims):
+    sdind, cnts = divindx(weights, lims)
+    nreg = len(lims) - 1
+    boored = int(weights.shape[0]/nreg)
+    xtrain = np.empty((0, momenta.shape[1]))
+    wtrain = np.empty((0))
+    ytrain = np.empty((0, 1))
+    for j in range(len(lims) - 1):
+        shrange = np.random.permutation(np.arange(int(cnts[j])))
+        test = momenta[sdind.flatten() == j][shrange[:boored]]
+        testw = weights[sdind.flatten() == j][shrange[:boored]]
+        if test.shape[0] < boored:
+            test = np.tile(test, (int(boored/test.shape[0]) + 1, 1))
+            testw = np.tile(testw, int(boored/testw.shape[0]) + 1)
+        xtrain = np.append(xtrain, test[:boored], axis=0)
+        ytrain = np.append(ytrain, np.array([[j]]*boored), axis=0)
+        wtrain = np.append(wtrain, testw[:boored])
+    return xtrain, ytrain, wtrain
