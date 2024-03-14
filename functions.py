@@ -56,6 +56,76 @@ def get_lims2(res, divs, res_min=0.0):
     return np.array(lims)
 
 
+def get_lim_err(
+    weights, target,
+    fromlim=0.0,
+    ntest=100,
+    vtotal=None,
+    nreal=None,
+    verbose=0,
+    tstscale=None
+):
+    if tstscale == 'log' or tstscale is None:
+        lims_tst = np.logspace(
+            np.log10(weights[weights > fromlim].min()),
+            np.log10(weights.max()),
+            ntest
+        )
+    elif tstscale == 'linear':
+        lims_tst = np.linspace(
+            weights[weights > fromlim].min(),
+            weights.max(),
+            ntest
+        )
+    else:
+        print("'tstscale' must be 'log', 'linear' or None")
+        return -1
+
+    if nreal is None:
+        nreal = len(weights)
+    if vtotal is None:
+        vtotal = 1.0
+
+    theerrel = []
+    l_ind = 1
+
+    while not theerrel or theerrel[-1] < target:
+        lim = lims_tst[l_ind]
+        fltr = (weights > fromlim)*(weights <= lim)
+        wstd_l = weights[fltr].std()
+        vreg = vtotal*fltr.sum()/nreal
+        theerrel.append(wstd_l*vreg)
+        l_ind += 1
+        if l_ind == len(lims_tst):
+            print(
+                "Target could not be reached.",
+                "Last value is:", theerrel[-1]
+            )
+            return -1
+
+    if l_ind == 2:
+        print(
+            "Limit found in one jump, consider increasing ntest.",
+            "Used ntest={}".format(ntest)
+        )
+
+    thelim = np.interp(target, theerrel, lims_tst[1:len(theerrel) + 1])
+
+    if verbose > 0:
+        print(
+            "New limit estimated using",
+            ((weights > fromlim)*(weights <= thelim)).sum(),
+            "out of",
+            weights.shape[0]
+        )
+        print(
+            "with weights in the range",
+            fromlim, "-", thelim
+        )
+
+    return thelim
+
+
 def xgenerate(n, bounds):
     bnds_here = np.array(bounds)
     x = np.random.uniform(
@@ -111,3 +181,24 @@ def get_train_xy(momenta, weights, lims):
         ytrain = np.append(ytrain, np.array([[j]]*boored), axis=0)
         wtrain = np.append(wtrain, testw[:boored])
     return xtrain, ytrain, wtrain
+
+
+def to_multilabel(labels, nregs=None, activation_out=None):
+    if nregs is None:
+        nregs = int(labels.max() - labels.min()) + 1
+    yout = np.empty((labels.shape[0], nregs - 1))
+    yint = labels.astype(int)
+    ymax = int(yint.max())
+    if activation_out is None or activation_out == "sigmoid":
+        for j in range(len(yint)):
+            yout[j] = np.append(
+                np.ones((yint[j][0])),
+                np.zeros((ymax - yint[j][0]))
+            )
+    elif activation_out == "tanh":
+        for j in range(len(yint)):
+            yout[j] = np.append(
+                np.full((yint[j][0]), 1),
+                np.full((ymax - yint[j][0]), -1)
+            )
+    return yout
