@@ -145,7 +145,7 @@ def qqee_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptl=10, cutetal=2.5):
     return events, weights, int(jgps.cutpts)
 
 
-def gg4u4d4b_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptjet=20.0, cutptb=0.0, cutetajet=5.0, cutetab=-1):
+def gg4u4d4b_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptjet=20.0, cutptb=0.0, cutetajet=2.5, cutetab=-1, cutHt=50.0):
     if type(energy) in (float, int):
         energy1 = float(energy)/2.0
         energy2 = float(energy)/2.0
@@ -160,7 +160,11 @@ def gg4u4d4b_gen_ph_spc_fast(energy=ENERGY, npts=int(1e5), cutptjet=20.0, cutptb
 
     rseed = np.random.randint(1, 100000000)
 
-    jgps = ROOT.gen_gg4u4d4b_space(energy1, energy2, npts, cutptjet, cutptb, cutetajet, cutetab, rseed)
+    jgps = ROOT.gen_gg4u4d4b_space(
+        energy1, energy2, npts,
+        cutptjet, cutptb, cutetajet, cutetab, cutHt,
+        rseed
+    )
 
     weights = np.asarray(jgps.weight)
 
