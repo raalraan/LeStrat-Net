@@ -163,10 +163,14 @@ def lbins(limini, limend, nbins=100):
     )
 
 
-def get_train_xy(momenta, weights, lims):
+# TODO Add an option to increase the use the size of the largest class instead
+def get_train_xy(momenta, weights, lims, largest_size=False):
     sdind, cnts = divindx(weights, lims)
     nreg = len(lims) - 1
-    boored = int(weights.shape[0]/nreg)
+    if largest_size:
+        boored = max(cnts)
+    else:
+        boored = int(weights.shape[0]/nreg)
     xtrain = np.empty((0, momenta.shape[1]))
     wtrain = np.empty((0))
     ytrain = np.empty((0, 1))
