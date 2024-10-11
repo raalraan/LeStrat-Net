@@ -64,10 +64,17 @@ def reg_pred_gen(model, data_transform=None):
         if type(model) is list:
             nregs = len(model) + 1
             mdconf = model[0].get_config()
-            ndim = mdconf['layers'][0]['config']['batch_input_shape'][1]
+            # TODO This depends on trusting that model.get_config() is stable
+            try:
+                ndim = mdconf['layers'][0]['config']['batch_input_shape'][1]
+            except KeyError:
+                ndim = mdconf['layers'][0]['config']['batch_shape'][1]
         else:
             mdconf = model.get_config()
-            ndim = mdconf['layers'][0]['config']['batch_input_shape'][1]
+            try:
+                ndim = mdconf['layers'][0]['config']['batch_input_shape'][1]
+            except KeyError:
+                ndim = mdconf['layers'][0]['config']['batch_shape'][1]
             activation_out = mdconf['layers'][-1]['config']['activation']
             if activation_out == 'softmax':
                 nregs = mdconf['layers'][-1]['config']['units']
