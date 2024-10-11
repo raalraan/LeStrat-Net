@@ -23,6 +23,7 @@ ENERGY = TGPS_m2p.ENERGY
 indindx = np.delete(list(range(8, 13*4)), range(0, 11*4, 4))
 # Add quark energy
 indindx = np.append([0, 4], indindx)
+indim = indindx.shape[0]
 
 p23 = TGPS_m2p.p23
 
@@ -130,7 +131,6 @@ stopper = EarlyStopping(
     patience=200,
 )
 
-indim = indindx.shape[0]
 # indim = x0train.shape[1]
 # outdim = 1
 
@@ -572,8 +572,8 @@ tw1 = get_weights(td4mg1, w1)
 # %%
 
 ptest = puringko(
-    3, indim, hlayers=6, nodes_max=128, activation_out='sigmoid',
-    loss=myloss4_2
+    3, indim, hlayers=6, nodes_max=128, activation_out='tanh',
+    loss='squared_hinge'
 )
 ptest.limits[0] = get_lims_test(
     tw1,
