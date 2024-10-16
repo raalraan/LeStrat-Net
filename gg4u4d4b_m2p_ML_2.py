@@ -42,6 +42,7 @@ def get_weights(momenta, weights, factors=None):
 
     alphas = [p23.alphasQ2(s) for s in q2s]
     wgws = TGPS_m2p.ft_get_mg5weights(momenta, alphas)
+    wgws[np.isnan(wgws)] = 0.0
 
     x1 = 2*momenta[:, 0, 3]/ENERGY
     x2 = -2*momenta[:, 1, 3]/ENERGY
