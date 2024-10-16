@@ -92,6 +92,7 @@ def psg_wrap(npts=None, energy_min=None, energy_max=None):
 
 def get_weights_wrap(x):
     fmmnta, weights = data_detransform(x)
+    weights[np.isnan(weights)] = 0.0
     return get_weights(fmmnta, weights)
 
 
