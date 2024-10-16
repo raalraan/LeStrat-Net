@@ -246,6 +246,10 @@ for j in range(runs):
     # TODO This number (0.5) needs to be smarter, maybe depend on average
     # reg_merge = devs_corr**2 < 0.1
 
+    # Do not merge 2 regions into one
+    if len(l10rdevs) == 2:
+        reg_merge[reg_merge] = False
+
     if reg_merge.sum() > 0:
         limits_mrg[j], devs_corr_cp, indmrg = merge_lim(limits[j], devs_corr)
         print("Merged region {} to {}".format(*indmrg))
