@@ -178,7 +178,8 @@ def sample_gen_nn_single_reg(
         sample_seed_inreg = sample_seed[0][sd_rfltr]
 
     xpre_dum = xgenerator(ntest)
-    ntried = ntest
+    # ntried = ntest
+    ntried = xpre_dum.shape[0]
     nnregs, nnconf = nnfun(xpre_dum, batch_size=batch_size)
 
     if not isinstance(xpre_dum, np.ndarray):
@@ -195,7 +196,8 @@ def sample_gen_nn_single_reg(
                 ntried
             )
         xpre_dum_r = xgenerator(ntest)
-        ntried += ntest
+        # ntried += ntest
+        ntried += xpre_dum_r.shape[0]
         nnregs_r, nnconf_r = nnfun(xpre_dum_r, batch_size=batch_size)
         retries += 1
 
@@ -287,7 +289,8 @@ def sample_gen_nn_single_reg(
         for j in range(maxiter):
             xpre1_dum = xgenerator(ntest, new_min, new_max)
             # Effective number of tried points if I had used the full space
-            ntreff = ntest*Vtot/(new_max - new_min).prod()
+            # ntreff = ntest*Vtot/(new_max - new_min).prod()
+            ntreff = xpre1_dum.shape[0]*Vtot/(new_max - new_min).prod()
             ntried += ntreff
             nnregs1, nnconf1 = nnfun(xpre1_dum, batch_size=batch_size)
 
@@ -297,8 +300,10 @@ def sample_gen_nn_single_reg(
             rfltr1 = nnregs1 == regindex
             while rfltr1.sum() < 1:
                 xpre1_dum_r = xgenerator(ntest, new_min, new_max)
-                ntried += ntest*Vtot/(new_max - new_min).prod()
-                ntreff += ntest*Vtot/(new_max - new_min).prod()
+                # ntried += ntest*Vtot/(new_max - new_min).prod()
+                # ntreff += ntest*Vtot/(new_max - new_min).prod()
+                ntried += xpre1_dum_r.shape[0]*Vtot/(new_max - new_min).prod()
+                ntreff += ntried
                 nnregs1_r, nnconf1_r = nnfun(
                     xpre1_dum_r,
                     batch_size=batch_size
@@ -425,8 +430,8 @@ def sample_gen_nn(
         xaccumul[j] = xpre[regs_pred == j][:npts_ls[j]]
         xconfs_out[j] = xconfs[regs_pred == j][:npts_ls[j]]
         found[j] = (regs_pred == j).sum()
-        vols[j] = Vtot*found[j]/ntest
-        tried[j] = ntest
+        tried[j] = xpre.shape[0]
+        vols[j] = Vtot*found[j]/tried[j]
     isdone = [xaccumul[k].shape[0] >= npts_ls[k] for k in range(nregs)]
     # print(isdone)
     while not all(isdone):
@@ -448,7 +453,7 @@ def sample_gen_nn(
                     axis=0
                 )
             found[j] += (regs_pred == j).sum()
-            tried[j] += ntest
+            tried[j] += xpre.shape[0]
             vols[j] = Vtot*found[j]/tried[j]
             # print(j, xaccumul[j].shape[0], vols[j], found[j], tried[j])
         isdone = [xaccumul[k].shape[0] >= npts_ls[k] for k in range(nregs)]
@@ -564,15 +569,15 @@ def sample_gen_nn3(
             )
 
     # 2.2 Determine number of tried points
-    ntried = np.ones([nregs])*ntest
+    ntried = np.ones([nregs])*xdum.shape[0]
 
-    intst_rat = nin/ntest
+    intst_rat = nin/xdum.shape[0]
 
     # 2.3 Determine volumes
     Vest = Vtot*intst_rat
 
     # 2.4 Determine variance
-    Vevar = Vtot**2/ntest*(intst_rat - (intst_rat)**2)
+    Vevar = Vtot**2/xdum.shape[0]*(intst_rat - (intst_rat)**2)
 
     # 2.4.1 Determine relative error
     rerr = Vevar**0.5/Vest
@@ -653,7 +658,7 @@ def sample_gen_nn3(
 
                 # 7. Resample with new limits
                 xdum_next = xgenerator(ntest, new_min, new_max)
-                ntreff = ntest*Vtot/(new_max - new_min).prod()
+                ntreff = xdum_next.shape[0]*Vtot/(new_max - new_min).prod()
                 rdum_next, _ = nnfun(xdum_next, batch_size=batch_size)
 
                 nin_next = np.fromiter((
@@ -1219,7 +1224,8 @@ def model_fit(
 
             if model_restart:
                 this_mdl = model_create(
-                    ndim, activation_out, 10*16*ndim, nodes_out, loss,
+                    # ndim, activation_out, 10*16*ndim, nodes_out, loss,
+                    ndim, activation_out, nreg*2*ndim, nodes_out, loss,
                     learning_rate=learning_rate, use_metrics=use_metrics
                 )
                 nnfun = reg_pred_gen(this_mdl, data_transform)
