@@ -238,70 +238,44 @@ for j in range(runs):
     )
     print("Corrected sigma(f)*Vol", devs_corr)
 
+    # DETERMINE NEW LIMITS
     l10rdevs = np.log10(devs_corr)
     l10rdevs_mean = l10rdevs.mean()
+    # Divide regions that have V*sigma one order of magnitude larger
+    # than average
+    reg_rediv = l10rdevs > l10rdevs_mean + 1
 
-    # WHAT TO MERGE
-    # TODO Probably should merge only if variance is several orders of
-    # magnitude smaller, like more than 10^5 smaller
-    reg_merge = l10rdevs < l10rdevs_mean - 3
-    # TODO This number (0.5) needs to be smarter, maybe depend on average
-    # reg_merge = devs_corr**2 < 0.1
-
-    # Do not merge 2 regions into one
-    if len(l10rdevs) == 2:
-        reg_merge[reg_merge] = False
-
-    if reg_merge.sum() > 0:
-        limits_mrg[j], devs_corr_cp, indmrg = merge_lim(limits[j], devs_corr)
-        print("Merged region {} to {}".format(*indmrg))
-    else:
-        limits_mrg[j] = list(limits[j])
-        devs_corr_cp = list(devs_corr)
-        indmrg = (np.inf, np.inf)
-    # IF THERE WAS ANYTHING TO MERGE, IT WAS MERGED
-
-    l10rdevs_cp = np.log10(devs_corr_cp)
-    l10rdevs_cp_mean = l10rdevs_cp.mean()
-    l10rdevs_cp_std = l10rdevs_cp.std()
-
-    rdc_cp_mean = np.mean(devs_corr_cp)
-    rdc_cp_std = np.std(devs_corr_cp)
-
-    logmargin = 0.5
-    # TODO This number (10) needs to be smarter, maybe depend on average
-    # reg_rediv = devs_corr**2 > 10
-    # reg_rediv_old = devs_corr**2 > 10
-    reg_rediv = l10rdevs_cp > l10rdevs_cp_mean + 0.5
-    reg_rediv_old = l10rdevs_cp > l10rdevs_cp_mean
-
-    if reg_rediv.sum() == 0 and reg_merge.sum() == 0:
-        print("No more regions to merge or divide. Stopping at run number", j)
-        break
-
-    # HIGH VARIANCE*VOL**2 REGIONS DIVIDED HERE
-    new_limits = list(limits_mrg[j])
-    kshift = 0
-    for k in range(len(limits_mrg[j]) - 1):
-        if k >= indmrg[0]:
-            krediv = k + 1
-        else:
-            krediv = k
-        if reg_rediv[krediv]:
-            print("Redivide region", krediv)
+    limits_rediv = list(limits[j])
+    l10rdevs_pad = list(l10rdevs)
+    for k in range(len(reg_rediv)):
+        if reg_rediv[k]:
             fltr_corr = (
-                (morefvals[krediv] > limits[j][krediv])
-                * (morefvals[krediv] <= limits[j][krediv + 1])
+                (morefvals[k] > limits[j][k])
+                * (morefvals[k] <= limits[j][k + 1])
             )
-            lims_rediv = get_lims_backforth(morefvals[krediv][fltr_corr], 3)
-            new_limits = (
-                new_limits[:k + kshift + 1]
-                + [lims_rediv[1]]
-                + new_limits[k + kshift + 1:]
+            lims_new = get_lims_backforth(morefvals[k][fltr_corr], 3)
+            limits_rediv = (
+                limits_rediv[:k + 1]
+                + [lims_new[1]]
+                + limits_rediv[k + 1:]
             )
-            kshift += 1
-    limits[j + 1] = new_limits
-    # REGIONS HAVE BEEN DIVIDED
+            # ADD DUMMY VALUE DUE TO ADDING PREVIOUS LIMIT, NEEDED WHEN
+            # MERGING
+            l10rdevs_pad = (
+                l10rdevs_pad[:k + 1]
+                + [l10rdevs_mean + 2]
+                + l10rdevs_pad[k + 1:]
+            )
+    print(limits_rediv)
+    print(l10rdevs_pad)
+
+    # Merge regions that have V*sigma 4 orders of magnitude smaller
+    # than average
+    reg_merge = l10rdevs_pad < l10rdevs_mean - 4
+
+    limits[j + 1], devs_dum, indmrg = merge_lim(
+        limits_rediv, 10**np.array(l10rdevs_pad))
+    # NEW LIMITS HAVE BEEN DETERMINED
 
     # Boost samples in redivided regions:
     # TODO This should only be needed if the number of points per region is
@@ -310,24 +284,19 @@ for j in range(runs):
     if reg_rediv.sum() > 0:
         print(
             "Adding samples for regions:",
-            list(np.arange(len(morepts[0]))[reg_rediv_old])
+            list(np.arange(len(morepts[0]))[reg_rediv])
         )
 
-        nptsreg_rediv = nptsreg*reg_rediv_old
+        nptsreg_rediv = nptsreg*reg_rediv
         morepts_rediv0 = sample_gen_nn2(
             testfun[j], psg_wrap, nptsreg_rediv, int(1e7),
             batch_size=int(1e6), maxiter=1000,
             sample_seed=thisseed,
             maxretries=5
         )
-        # morepts_rediv0 = sample_gen_nn3(
-        #     testfun[j], my_x_gen, nptsreg_rediv, int(1e7),
-        #     batch_size=int(1e6), maxiter=1000,
-        #     maxretries=5
-        # )
         morepts_rediv = [
             morepts_rediv0[0][n]
-            for n in list(np.arange(len(morepts_rediv0[0]))[reg_rediv_old])
+            for n in list(np.arange(len(morepts_rediv0[0]))[reg_rediv])
         ]
         morefvals_rediv = [
             get_weights_wrap(morepts_rediv[n])
@@ -335,7 +304,7 @@ for j in range(runs):
         ]
     else:
         morepts_rediv = []
-        morefvals = []
+        morefvals_rediv = []
 
     print(
         "Run {}:".format(j + 1),
