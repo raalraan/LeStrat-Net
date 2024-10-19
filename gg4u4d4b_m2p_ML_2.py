@@ -123,6 +123,26 @@ def data_detransform(x):
     return xdt, wps
 
 
+# Check for points outside bounds
+def check_out_bounds(x, bound=None):
+    if bound is None:
+        bound = np.array([[-1, 1]]*x.shape[1])
+    else:
+        bound = np.array(bound)
+
+    _x = np.copy(x)
+
+    inr_fltr = np.all(
+        (_x >= bound[:, 0])*(_x <= bound[:, 1]),
+        axis=1
+    )
+
+    if inr_fltr.sum() != _x.shape[0]:
+        _x = _x[inr_fltr]
+
+    return _x, x.shape[0] - _x.shape[0]
+
+
 # %%
 
 n0 = int(2e5)
@@ -193,6 +213,31 @@ for j in range(runs):
         sample_seed=thisseed,
         maxretries=5
     )
+
+    # IF SOME POINTS ARE OUTSIDE RANGE: REMOVE AND REPLACE=====================
+    mrneeds = [0]*len(morepts[0])
+    for k in range(len(morepts[0])):
+        morepts[0][k], mrneeds[k] = check_out_bounds(morepts[0][k])
+    print("mrneeds", mrneeds)
+
+    while any(needs != 0 for needs in mrneeds):
+        mrneeded, _, _ = sample_gen_nn2(
+            testfun[j], psg_wrap, mrneeds, int(1e5),
+            batch_size=int(1e6), maxiter=1000,
+            sample_seed=thisseed,
+            maxretries=5
+        )
+        for k, needs in enumerate(mrneeds):
+            if needs > 0:
+                morepts[0][k] = np.concatenate(
+                    [morepts[0][k], mrneeded[k]]
+                )
+
+        mrneeds = [0]*len(morepts[0])
+        for k in range(len(morepts[0])):
+            morepts[0][k], mrneeds[k] = check_out_bounds(morepts[0][k])
+        print("mrneeds", mrneeds)
+    # =========================================================================
     print("Sample created!")
     print("Calculating weights and estimates using sample")
 
@@ -288,15 +333,41 @@ for j in range(runs):
         )
 
         nptsreg_rediv = nptsreg*reg_rediv
-        morepts_rediv0 = sample_gen_nn2(
+        mrpts_r0 = sample_gen_nn2(
             testfun[j], psg_wrap, nptsreg_rediv, int(1e7),
             batch_size=int(1e6), maxiter=1000,
             sample_seed=thisseed,
             maxretries=5
         )
+        # IF SOME POINTS ARE OUTSIDE RANGE: REMOVE AND REPLACE=================
+        mrneeds = [0]*len(mrpts_r0[0])
+        for k in range(len(mrpts_r0[0])):
+            if nptsreg_rediv[k] > 0:
+                mrpts_r0[0][k], mrneeds[k] = check_out_bounds(mrpts_r0[0][k])
+        print("mrneeds", mrneeds)
+
+        while any(needs != 0 for needs in mrneeds):
+            mrneeded, _, _ = sample_gen_nn2(
+                testfun[j], psg_wrap, mrneeds, int(1e5),
+                batch_size=int(1e6), maxiter=1000,
+                sample_seed=thisseed,
+                maxretries=5
+            )
+            for k, needs in enumerate(mrneeds):
+                if needs > 0:
+                    mrpts_r0[0][k] = np.concatenate(
+                        [mrpts_r0[0][k], mrneeded[k]]
+                    )
+
+            mrneeds = [0]*len(mrpts_r0[0])
+            for k in range(len(mrpts_r0[0])):
+                if nptsreg_rediv[k] > 0:
+                    mrpts_r0[0][k], mrneeds[k] = check_out_bounds(mrpts_r0[0][k])
+            print("mrneeds", mrneeds)
+        # =====================================================================
         morepts_rediv = [
-            morepts_rediv0[0][n]
-            for n in list(np.arange(len(morepts_rediv0[0]))[reg_rediv])
+            mrpts_r0[0][n]
+            for n in list(np.arange(len(mrpts_r0[0]))[reg_rediv])
         ]
         morefvals_rediv = [
             get_weights_wrap(morepts_rediv[n])
