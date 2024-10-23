@@ -338,7 +338,7 @@ def sample_gen_nn_single_reg(
 
             if verbose > 0:
                 print(
-                    "Attemtp {}:".format(j + 1),
+                    "Attempt {}:".format(j + 1),
                     "Volume (this run, total):",
                     Vtot*(nnregs1 == regindex).sum()/ntreff,
                     Vtot*nin/ntried,
@@ -1150,7 +1150,8 @@ def model_fit(
     model_restart=False,
     use_metrics=False,
     sample_seed=None,
-    maxretries=100
+    maxretries=100,
+    callbacks=None
 ):
     # global weights_as_tensor
 
@@ -1187,7 +1188,8 @@ def model_fit(
         ytrain_trans,
         epochs=epochs_part,
         batch_size=batch_size,
-        verbose=verbose
+        verbose=verbose,
+        callbacks=callbacks
     )
 
     nnfun = reg_pred_gen(this_mdl, data_transform)
@@ -1217,6 +1219,46 @@ def model_fit(
             yretr = np.append(yretr, ytoadd, axis=0)
             wretr = np.append(wretr, wtoadd)
 
+            # REPEAT SMALL SAMPLE
+            cntr = []
+            for j in range(int(np.max(yretr)) + 1):
+                cntr.append((yretr == j).sum())
+
+            cntr_max = max(cntr)
+            cntr_min = min(cntr)
+
+            if cntr_max != cntr_min:
+                xretr_pdd = np.empty((0, xretr.shape[1]))
+                yretr_pdd = np.empty((0, yretr.shape[1]))
+                for j in range(int(np.max(yretr)) + 1):
+                    xretr_dum = np.copy(xretr[(yretr == j).flatten()])
+                    yretr_dum = np.copy(yretr[(yretr == j).flatten()])
+                    while xretr_dum.shape[0] < cntr_max:
+                        xretr_dum = np.append(
+                            xretr_dum,
+                            xretr[(yretr == j).flatten()],
+                            axis=0
+                        )
+                        yretr_dum = np.append(
+                            yretr_dum,
+                            yretr[(yretr == j).flatten()],
+                            axis=0
+                        )
+
+                    xretr_pdd = np.append(
+                        xretr_pdd,
+                        xretr_dum[:cntr_max],
+                        axis=0
+                    )
+                    yretr_pdd = np.append(
+                        yretr_pdd,
+                        yretr_dum[:cntr_max],
+                        axis=0
+                    )
+                xretr = xretr_pdd
+                yretr = yretr_pdd
+            # ===================
+
             if activation_out == 'softmax':
                 yretr_t = to_categorical(yretr)
             else:
@@ -1238,7 +1280,8 @@ def model_fit(
                 yretr_t,
                 epochs=epochs_part,
                 batch_size=batch_size,
-                verbose=verbose
+                verbose=verbose,
+                callbacks=callbacks
             )
 
     return nnfun, this_mdl
