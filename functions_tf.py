@@ -3,7 +3,7 @@ from math import sqrt, exp, ceil
 from functions import divindx, get_train_xy
 
 import tensorflow as tf
-from tensorflow.keras import Sequential
+from tensorflow.keras import Sequential, Input
 from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import to_categorical
@@ -856,7 +856,8 @@ def model_create(
     """Create a model based on parameters"""
     D = dimensions
     model = Sequential()
-    model.add(Dense(nodes_start, input_shape=(D,), activation='relu'))
+    model.add(Input(shape=(D,)))
+    model.add(Dense(nodes_start, activation='relu'))
     model.add(Dense(int(nodes_start/2 + 0.5), activation='relu'))
     model.add(Dense(nodes_out, activation=activation_out))
     if use_metrics:
