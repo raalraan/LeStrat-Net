@@ -2,8 +2,9 @@ import numpy as np
 import TGPS_m2p
 
 from functions import get_lims_backforth, merge_lim
-from functions_tf import model_fit, sample_gen_nn2
+from functions_tf_2toN import model_fit, sample_gen_nn2
 from loss_experiment import loss_setup
+from tensorflow.keras.callbacks import EarlyStopping
 
 # %%
 
@@ -91,6 +92,41 @@ def psg_wrap(npts=None, energy_min=None, energy_max=None):
     return inputtrans_w(fmmnta, weights)
 
 
+# My other code expects a phase space generator that takes:
+#   1st argument: number of points to generate
+#   2nd argument: boundary at minimum for all parameters
+#   3rd argument: boundary at maximum for all parameters
+# Also, if no argument is given, it should output the default boundaries
+def psg_wrap_alt(
+    npts=None, energy_min=None, energy_max=None, limit_index=None
+):
+    if all(
+        argval is None
+        for argval in [npts, energy_min, energy_max, limit_index]
+    ):
+        return [0, 0], [1, 1]
+
+    if energy_max is None:
+        energy0 = ENERGY/2
+        energy1 = ENERGY/2
+    else:
+        if type(energy_max) is list or type(energy_max) is np.ndarray \
+                and len(energy_max) > 1:
+            energy0 = energy_max[0]*ENERGY/2
+            energy1 = energy_max[1]*ENERGY/2
+        else:
+            energy0 = energy_max*ENERGY/2
+            energy1 = energy_max*ENERGY/2
+
+    fmmnta, weights, ncut = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
+        energy=[energy0, energy1],
+        npts=npts
+    )
+
+    # return inputtrans_w(fmmnta, weights), fmmnta, weights, ncut
+    return inputtrans_w(fmmnta, weights)
+
+
 def get_weights_wrap(x):
     fmmnta, weights = data_detransform(x)
     weights[np.isnan(weights)] = 0.0
@@ -146,7 +182,7 @@ def check_out_bounds(x, bound=None):
 # %%
 
 n0 = int(2e5)
-fwn = psg_wrap(n0)
+fwn = psg_wrap_alt(n0)
 
 x0 = data_transform(fwn)
 res0 = get_weights_wrap(fwn)
@@ -163,7 +199,15 @@ nptsreg = int(2e5)
 
 # %%
 
-runs = 3
+myEarlyStop = EarlyStopping(
+    monitor='loss',
+    min_delta=0,
+    patience=200,
+    mode='min',
+    start_from_epoch=int(epochs_part*2/3)
+)
+
+runs = 4
 maxregs = 30
 testfun = [None]*runs
 testmdl = [None]*runs
@@ -184,15 +228,16 @@ for j in range(runs):
         np.concatenate(fpool[:j + 1]),
         get_weights, limits[j], xtrain_size_reg*(len(limits[j]) - 1),
         activation_out, loss,
-        epochs_part=epochs_part, ntrains=4, data_transform=data_transform,
-        model_restart=model_restart, xgenerator=psg_wrap,
+        epochs_part=epochs_part, ntrains=3, data_transform=data_transform,
+        model_restart=model_restart, xgenerator=psg_wrap_alt,
         sample_seed=(
             np.concatenate(xpool[:j + 1], axis=0),
             np.concatenate(fpool[:j + 1]),
             None
         ),
         maxretries=5,
-        verbose=0
+        verbose=0,
+        callbacks=[myEarlyStop]
     )
 
     if len(limits) - 1 >= maxregs:
@@ -208,7 +253,7 @@ for j in range(runs):
     print("Training finished. Creating a sample using trained network...")
     # Create a sample of points using the neural network
     morepts = sample_gen_nn2(
-        testfun[j], psg_wrap, nptsreg, int(1e7),
+        testfun[j], psg_wrap_alt, nptsreg, int(1e7),
         batch_size=int(1e6), maxiter=1000,
         sample_seed=thisseed,
         maxretries=5
@@ -222,7 +267,7 @@ for j in range(runs):
 
     while any(needs != 0 for needs in mrneeds):
         mrneeded, _, _ = sample_gen_nn2(
-            testfun[j], psg_wrap, mrneeds, int(1e5),
+            testfun[j], psg_wrap_alt, mrneeds, int(1e5),
             batch_size=int(1e6), maxiter=1000,
             sample_seed=thisseed,
             maxretries=5
@@ -334,7 +379,7 @@ for j in range(runs):
 
         nptsreg_rediv = nptsreg*reg_rediv
         mrpts_r0 = sample_gen_nn2(
-            testfun[j], psg_wrap, nptsreg_rediv, int(1e7),
+            testfun[j], psg_wrap_alt, nptsreg_rediv, int(1e7),
             batch_size=int(1e6), maxiter=1000,
             sample_seed=thisseed,
             maxretries=5
@@ -348,7 +393,7 @@ for j in range(runs):
 
         while any(needs != 0 for needs in mrneeds):
             mrneeded, _, _ = sample_gen_nn2(
-                testfun[j], psg_wrap, mrneeds, int(1e5),
+                testfun[j], psg_wrap_alt, mrneeds, int(1e5),
                 batch_size=int(1e6), maxiter=1000,
                 sample_seed=thisseed,
                 maxretries=5
