@@ -83,10 +83,33 @@ def psg_wrap(npts=None, energy_min=None, energy_max=None):
             energy0 = energy_max*ENERGY/2
             energy1 = energy_max*ENERGY/2
 
-    fmmnta, weights, ncut = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
+    fmmnta0, weights0, ncut0 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
         energy=[energy0, energy1],
         npts=npts
     )
+
+    invld0 = np.any(np.isnan(fmmnta0), axis=2)
+    invld = np.any(invld0, axis=1)
+    fmmnta = fmmnta0[~invld]
+    weights = weights0[~invld]
+
+    while fmmnta.shape[0] < npts:
+        fmmnta0, weights0, ncut0 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
+            energy=[energy0, energy1],
+            npts=npts - fmmnta.shape[0]
+        )
+
+        invld0 = np.any(np.isnan(fmmnta0), axis=2)
+        invld = np.any(invld0, axis=1)
+        fmmnta = np.append(
+            fmmnta,
+            fmmnta0[~invld],
+            axis=0
+        )
+        weights = np.append(
+            weights,
+            weights0[~invld]
+        )
 
     # return inputtrans_w(fmmnta, weights), fmmnta, weights, ncut
     return inputtrans_w(fmmnta, weights)
@@ -118,10 +141,33 @@ def psg_wrap_alt(
             energy0 = energy_max*ENERGY/2
             energy1 = energy_max*ENERGY/2
 
-    fmmnta, weights, ncut = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
+    fmmnta0, weights0, ncut0 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
         energy=[energy0, energy1],
         npts=npts
     )
+
+    invld0 = np.any(np.isnan(fmmnta0), axis=2)
+    invld = np.any(invld0, axis=1)
+    fmmnta = fmmnta0[~invld]
+    weights = weights0[~invld]
+
+    while fmmnta.shape[0] < npts:
+        fmmnta0, weights0, ncut0 = TGPS_m2p.gg4u4d4b_gen_ph_spc_fast(
+            energy=[energy0, energy1],
+            npts=npts - fmmnta.shape[0]
+        )
+
+        invld0 = np.any(np.isnan(fmmnta0), axis=2)
+        invld = np.any(invld0, axis=1)
+        fmmnta = np.append(
+            fmmnta,
+            fmmnta0[~invld],
+            axis=0
+        )
+        weights = np.append(
+            weights,
+            weights0[~invld]
+        )
 
     # return inputtrans_w(fmmnta, weights), fmmnta, weights, ncut
     return inputtrans_w(fmmnta, weights)
