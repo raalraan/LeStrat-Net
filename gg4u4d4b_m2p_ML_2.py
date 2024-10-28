@@ -16,6 +16,7 @@ indindx = np.delete(list(range(8, 13*4)), range(0, 11*4, 4))
 indindx = np.append([0, 4], indindx)
 
 p23 = TGPS_m2p.p23
+MB = TGPS_m2p.MB
 
 # %% Relevant definitions
 
@@ -188,6 +189,12 @@ def data_transform(x):
 
 
 def data_detransform(x):
+    masses2 = np.array([[
+        0.0, 0.0, MB,
+        0.0, 0.0, MB,
+        0.0, 0.0, MB,
+        0.0, 0.0, MB,
+    ]])**2
     ui1, ui2 = np.unravel_index(indindx, [14, 4])
     xps = x[:, :-1]*ENERGY/2
     wps = x[:, -1]
@@ -195,12 +202,13 @@ def data_detransform(x):
     xdt = np.zeros([x.shape[0], 14, 4])
     for k in range(len(ui1)):
         xdt[:, ui1[k], ui2[k]] = xps[:, k]
-        xdt[:, 0, 3] = xdt[:, 0, 0]
-        xdt[:, 1, 3] = -xdt[:, 1, 0]
-        xdt[:, -1, 1:-1] = -xdt[:, 2:-1, 1:-1].sum(axis=1)
-        xdt[:, -1, -1] = -xdt[:, 2:-1, -1].sum(axis=1) \
-            + xdt[:, :2, -1].sum(axis=1)
-        xdt[:, 2:, 0] = np.sqrt((xdt[:, 2:, 1:]**2).sum(axis=2))
+
+    xdt[:, 0, 3] = xdt[:, 0, 0]
+    xdt[:, 1, 3] = -xdt[:, 1, 0]
+    xdt[:, -1, 1:-1] = -xdt[:, 2:-1, 1:-1].sum(axis=1)
+    xdt[:, -1, -1] = -xdt[:, 2:-1, -1].sum(axis=1) \
+        + xdt[:, :2, -1].sum(axis=1)
+    xdt[:, 2:, 0] = np.sqrt((xdt[:, 2:, 1:]**2).sum(axis=2) + masses2)
 
     return xdt, wps
 
