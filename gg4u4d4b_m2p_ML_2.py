@@ -391,6 +391,7 @@ for j in range(runs):
 
     limits_rediv = list(limits[j])
     l10rdevs_pad = list(l10rdevs)
+    lims_added = 0
     for k in range(len(reg_rediv)):
         if reg_rediv[k]:
             fltr_corr = (
@@ -398,17 +399,18 @@ for j in range(runs):
                 * (morefvals[k] <= limits[j][k + 1])
             )
             lims_new = get_lims_backforth(morefvals[k][fltr_corr], 3)
+            lims_added += 1
             limits_rediv = (
-                limits_rediv[:k + 1]
+                limits_rediv[:k + lims_added]
                 + [lims_new[1]]
-                + limits_rediv[k + 1:]
+                + limits_rediv[k + lims_added:]
             )
             # ADD DUMMY VALUE DUE TO ADDING PREVIOUS LIMIT, NEEDED WHEN
             # MERGING
             l10rdevs_pad = (
-                l10rdevs_pad[:k + 1]
+                l10rdevs_pad[:k + lims_added]
                 + [l10rdevs_mean + 2]
-                + l10rdevs_pad[k + 1:]
+                + l10rdevs_pad[k + lims_added:]
             )
     print(limits_rediv)
     print(l10rdevs_pad)
@@ -417,8 +419,11 @@ for j in range(runs):
     # than average
     reg_merge = l10rdevs_pad < l10rdevs_mean - 4
 
-    limits[j + 1], devs_dum, indmrg = merge_lim(
-        limits_rediv, 10**np.array(l10rdevs_pad))
+    if np.any(reg_merge):
+        limits[j + 1], devs_dum, indmrg = merge_lim(
+            limits_rediv, 10**np.array(l10rdevs_pad))
+    else:
+        limits[j + 1] = limits_rediv
     # NEW LIMITS HAVE BEEN DETERMINED
 
     # Boost samples in redivided regions:
