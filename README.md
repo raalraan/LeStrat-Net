@@ -78,3 +78,25 @@ Test that `lhapdf6` can be imported by running
 	(py39-mlmc) $> python3 -c "import lhapdf; print(lhapdf.__version__)"
 
 TODO: What else?
+
+
+## Citation
+
+If LeStrat-Net benefits your research, please acknowledge our efforts by citing the following paper:
+
+```bibtex
+@article{Ban:2024bqy,
+    author = "Ban, Kayoung and Park, Myeonghun and Ramos, Raymundo",
+    title = "{LeStrat-Net: Lebesgue style stratification for Monte Carlo simulations powered by machine learning}",
+    eprint = "2412.13982",
+    archivePrefix = "arXiv",
+    primaryClass = "hep-ph",
+    month = "12",
+    year = "2024"
+}
+```
+
+## Reference
+
+_Kayoung Ban, Myeonghun Park, Raymundo Ramos,_ LeStrat-Net: Lebesgue style stratification for Monte Carlo simulations powered by machine learning*, [2412.13982 [hep-ph]](https://arxiv.org/pdf/2412.13982)
+
