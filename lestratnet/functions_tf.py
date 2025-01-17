@@ -1,6 +1,5 @@
 import numpy as np
 from math import sqrt, exp, ceil
-from functions import divindx, get_train_xy
 
 import tensorflow as tf
 from tensorflow.keras import Sequential, Input
@@ -8,6 +7,7 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import to_categorical
 
+from .functions import divindx, get_train_xy
 
 import gc
 
@@ -159,17 +159,8 @@ def sample_gen_nn_single_reg(
     if Vrerror_target is None:
         Vrerror_target = np.inf
 
-    xgen_noargs = xgenerator()
-    orig_min = xgen_noargs[0]
-    orig_max = xgen_noargs[1]
-    try:
-        limit_index = xgen_noargs[2]
-    except IndexError:
-        limit_index = list(range(len(orig_max)))
-
-    orig_min = np.array(orig_min)
-    orig_max = np.array(orig_max)
-    Vtot = (orig_max - orig_min).prod()
+    orig_min, orig_max = xgenerator()
+    Vtot = (np.array(orig_max) - np.array(orig_min)).prod()
 
     if ntest is None:
         ntest = ntarget
@@ -244,35 +235,24 @@ def sample_gen_nn_single_reg(
         rfltr = nnregs == regindex
 
     if rfltr.sum() > 0 and sample_seed is None:
-        xmaxs_pre = np.empty(orig_max.shape)
-        # xmins_pre = np.empty(orig_min.shape)
-        for li in limit_index:
-            xmaxs_pre[li] = xpre_dum[rfltr][:, li].max(axis=0)
-            # xmins_pre[li] = xpre_dum[rfltr][:, li].min(axis=0)
+        xmaxs_pre = xpre_dum[rfltr].max(axis=0)
+        xmins_pre = xpre_dum[rfltr].min(axis=0)
     elif rfltr.sum() > 0 and sample_seed is not None and sd_rfltr.sum() > 0:
-        xmaxs_pre0 = np.empty(orig_max.shape)
-        # xmins_pre0 = np.empty(orig_min.shape)
-        xmaxs_pre1 = np.empty(orig_max.shape)
-        # xmins_pre1 = np.empty(orig_min.shape)
-        for li in limit_index:
-            xmaxs_pre0[li] = xpre_dum[rfltr][:, li].max(axis=0)
-            # xmins_pre0[li] = xpre_dum[rfltr][:, li].min(axis=0)
-            xmaxs_pre1[li] = sample_seed_inreg[:, li].max(axis=0)
-            # xmins_pre1[li] = sample_seed_inreg[:, li].min(axis=0)
+        xmaxs_pre0 = xpre_dum[rfltr].max(axis=0)
+        xmins_pre0 = xpre_dum[rfltr].min(axis=0)
+        xmaxs_pre1 = sample_seed_inreg.max(axis=0)
+        xmins_pre1 = sample_seed_inreg.min(axis=0)
         xmaxs_pre = np.max(np.array([
             xmaxs_pre0,
             xmaxs_pre1
         ]), axis=0)
-        # xmins_pre = np.min(np.array([
-        #     xmins_pre0,
-        #     xmins_pre1
-        # ]), axis=0)
+        xmins_pre = np.min(np.array([
+            xmins_pre0,
+            xmins_pre1
+        ]), axis=0)
     elif rfltr.sum() == 0 and sample_seed is not None and sd_rfltr.sum() > 0:
-        xmaxs_pre = np.empty(orig_max.shape)
-        # xmins_pre = np.empty(orig_min.shape)
-        for li in limit_index:
-            xmaxs_pre[li] = sample_seed_inreg[:, li].max(axis=0)
-            # xmins_pre = sample_seed_inreg[:, li].min(axis=0)
+        xmaxs_pre = sample_seed_inreg.max(axis=0)
+        xmins_pre = sample_seed_inreg.min(axis=0)
     else:
         print(
             "Cannot use `sample_seed` to optimize test limits.",
@@ -296,10 +276,10 @@ def sample_gen_nn_single_reg(
             xaccumul.shape[0]
         )
 
-    # new_min = np.max(np.array([
-    #     orig_min + np.abs(np.array(orig_min) - np.array(xmins_pre))/fmargin,
-    #     orig_min
-    # ]), axis=0)
+    new_min = np.max(np.array([
+        orig_min + np.abs(np.array(orig_min) - np.array(xmins_pre))/fmargin,
+        orig_min
+    ]), axis=0)
     new_max = np.min(np.array([
         orig_max - np.abs(np.array(orig_max) - np.array(xmaxs_pre))/fmargin,
         orig_max
@@ -307,10 +287,10 @@ def sample_gen_nn_single_reg(
 
     if xaccumul.shape[0] < ntarget:
         for j in range(maxiter):
-            xpre1_dum = xgenerator(ntest, orig_min, new_max)
+            xpre1_dum = xgenerator(ntest, new_min, new_max)
             # Effective number of tried points if I had used the full space
-            # ntreff = ntest*Vtot/(new_max - orig_min).prod()
-            ntreff = xpre1_dum.shape[0]*Vtot/(new_max - orig_min).prod()
+            # ntreff = ntest*Vtot/(new_max - new_min).prod()
+            ntreff = xpre1_dum.shape[0]*Vtot/(new_max - new_min).prod()
             ntried += ntreff
             nnregs1, nnconf1 = nnfun(xpre1_dum, batch_size=batch_size)
 
@@ -319,10 +299,10 @@ def sample_gen_nn_single_reg(
 
             rfltr1 = nnregs1 == regindex
             while rfltr1.sum() < 1:
-                xpre1_dum_r = xgenerator(ntest, orig_min, new_max)
-                # ntried += ntest*Vtot/(new_max - orig_min).prod()
-                # ntreff += ntest*Vtot/(new_max - orig_min).prod()
-                ntried += xpre1_dum_r.shape[0]*Vtot/(new_max - orig_min).prod()
+                xpre1_dum_r = xgenerator(ntest, new_min, new_max)
+                # ntried += ntest*Vtot/(new_max - new_min).prod()
+                # ntreff += ntest*Vtot/(new_max - new_min).prod()
+                ntried += xpre1_dum_r.shape[0]*Vtot/(new_max - new_min).prod()
                 ntreff += ntried
                 nnregs1_r, nnconf1_r = nnfun(
                     xpre1_dum_r,
@@ -369,33 +349,30 @@ def sample_gen_nn_single_reg(
             # print(
             #     "got {} points in region".format((nnregs1 == regindex).sum())
             # )
-            xmaxs1_pre = np.empty(orig_max.shape)
-            # xmins1_pre = np.empty(orig_max.shape)
-            for li in limit_index:
-                xmaxs1_pre[li] = max(
-                    xpre1_dum[rfltr1][:, li].max(axis=0),
-                    xmaxs_pre[li]
-                )
-                # xmins1_pre[li] = min(
-                #     xpre1_dum[rfltr1][:, li].min(axis=0),
-                #     xmins_pre[li]
-                # )
+            xmaxs1_pre = np.max(np.array([
+                xpre1_dum[rfltr1].max(axis=0),
+                xmaxs_pre
+            ]), axis=0)
+            xmins1_pre = np.min(np.array([
+                xpre1_dum[rfltr1].min(axis=0),
+                xmins_pre
+            ]), axis=0)
 
+            new_min = np.max(np.array([
+                new_min + np.abs(
+                    np.array(new_min) - np.array(xmins1_pre)
+                )/fmargin,
+                new_min
+            ]), axis=0)
             new_max = np.min(np.array([
                 new_max - np.abs(
                     np.array(new_max) - np.array(xmaxs1_pre)
                 )/fmargin,
                 new_max
             ]), axis=0)
-            # new_min = np.max(np.array([
-            #     new_min + np.abs(
-            #         np.array(new_min) - np.array(xmins1_pre)
-            #     )/fmargin,
-            #     new_min
-            # ]), axis=0)
 
             xmaxs_pre = np.copy(xmaxs1_pre)
-            # xmins_pre = np.copy(xmins1_pre)
+            xmins_pre = np.copy(xmins1_pre)
 
             in_tried_r = nin/ntried
             Verror = Vtot*sqrt((in_tried_r - in_tried_r**2)/ntried)
@@ -426,13 +403,8 @@ def sample_gen_nn(
 ):
     """Generate a sample for all regions using a neural network"""
     if Vtot is None:
-        xgen_noargs = xgenerator()
-        orig_min = xgen_noargs[0]
-        orig_max = xgen_noargs[1]
-
-        orig_min = np.array(orig_min)
-        orig_max = np.array(orig_max)
-        Vtot = (orig_max - orig_min).prod()
+        orig_min, orig_max = xgenerator()
+        Vtot = (np.array(orig_max) - np.array(orig_min)).prod()
 
     D, nregs = nnfun()
     if type(npts) is int:
@@ -499,10 +471,7 @@ def sample_gen_nn2(
     version that uses the single region generator.  A little inefficient.
     """
     if Vtot is None:
-        xgen_noargs = xgenerator()
-        orig_min = xgen_noargs[0]
-        orig_max = xgen_noargs[1]
-
+        orig_min, orig_max = xgenerator()
         Vtot = (np.array(orig_max) - np.array(orig_min)).prod()
 
     D, nregs = nnfun()
@@ -543,10 +512,7 @@ def sample_gen_nn3(
     """Generate a sample for all regions using a neural network.  Improved
     for cases where some regions are surrounded by other regions.
     """
-    xgen_noargs = xgenerator()
-    orig_min = xgen_noargs[0]
-    orig_max = xgen_noargs[1]
-
+    orig_min, orig_max = xgenerator()
     Vtot = (np.array(orig_max) - np.array(orig_min)).prod()
     D, nregs = nnfun()
 
@@ -665,17 +631,17 @@ def sample_gen_nn3(
             ):
                 # 5. Determine the estimated limits of largest cube
                 if vregref != clrgst:
-                    # mins = cubes[vregref][0]
+                    mins = cubes[vregref][0]
                     maxs = cubes[vregref][1]
-                    # mins_prev = cubes[vregref - dirct*1][0]
+                    mins_prev = cubes[vregref - dirct*1][0]
                     maxs_prev = cubes[vregref - dirct*1][1]
                     fac_h = (1 - exp(-(thistry/exp_den)**3))
-                    # new_min = mins_prev + (mins - mins_prev)*fac_h
+                    new_min = mins_prev + (mins - mins_prev)*fac_h
                     new_max = maxs_prev + (maxs - maxs_prev)*fac_h
                     # print(mins, '\n', new_min)
                     # print(maxs, '\n', new_max)
                 else:
-                    # new_min = np.array(orig_min)
+                    new_min = np.array(orig_min)
                     new_max = np.array(orig_max)
 
                 # 6. Determine regions without points outside cube and exclude
@@ -684,22 +650,22 @@ def sample_gen_nn3(
                 for k in range(nregs):
                     if nin[k] > 0:
                         nout_cube[k] = (
-                            np.any(xdum[rdum == k].numpy() < orig_min, axis=1)
+                            np.any(xdum[rdum == k].numpy() < new_min, axis=1)
                             * np.any(xdum[rdum == k].numpy() > new_max, axis=1)
                         ).sum()
                     else:
                         nout_cube[k] = -1
 
                 # 7. Resample with new limits
-                xdum_next = xgenerator(ntest, orig_min, new_max)
-                ntreff = xdum_next.shape[0]*Vtot/(new_max - orig_min).prod()
+                xdum_next = xgenerator(ntest, new_min, new_max)
+                ntreff = xdum_next.shape[0]*Vtot/(new_max - new_min).prod()
                 rdum_next, _ = nnfun(xdum_next, batch_size=batch_size)
 
                 nin_next = np.fromiter((
                     (rdum_next == k).sum() for k in range(nregs)
                 ), float)
 
-                if all(orig_min == orig_min) and all(new_max == orig_max):
+                if all(new_min == orig_min) and all(new_max == orig_max):
                     regs_2_ref = range(nregs)
                 elif vregref > clrgst:
                     regs_2_ref = range(vregref, nregs)
@@ -766,9 +732,7 @@ def sample_gen_nn3(
 # TODO Replace xside by something related to full integration space
 def sample_integrate(nnfun, ffun, xgenerator, nptsreg, ntest, Vtot=None):
     if Vtot is None:
-        xgen_noargs = xgenerator()
-        orig_min = xgen_noargs[0]
-        orig_max = xgen_noargs[1]
+        orig_min, orig_max = xgenerator()
         Vtot = (np.array(orig_max) - np.array(orig_min)).prod()
 
     xacc, _, vols, tried = sample_gen_nn(
