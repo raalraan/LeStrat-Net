@@ -7,7 +7,7 @@ from tensorflow.keras.layers import Dense
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.utils import to_categorical
 
-from .functions import divindx, get_train_xy
+from .functions import divindx, get_train_xy, get_lims_backforth, merge_lim
 
 import gc
 
@@ -97,8 +97,6 @@ def reg_pred_gen(model, data_transform=None):
             regres_pre = []
             modres_out = []
             for j in range(len(model)):
-                # with tf.device('CPU:0'):
-                # gc.collect()
                 modres_here = model[j].predict(
                     xdata_tf,
                     batch_size=batch_size,
@@ -118,8 +116,6 @@ def reg_pred_gen(model, data_transform=None):
                 (len(model), xdata_tf.shape[0])
             ).T.sum(axis=1)
         else:
-            # with tf.device('CPU:0'):
-            # gc.collect()
             modres = model.predict(
                 xdata_tf,
                 batch_size=batch_size,
@@ -285,7 +281,7 @@ def sample_gen_nn_single_reg(
         orig_max
     ]), axis=0)
 
-    if xaccumul.shape[0] < ntarget:
+    if xaccumul.shape[0] < ntarget or Verror/Vtot/in_tried_r > Vrerror_target:
         for j in range(maxiter):
             xpre1_dum = xgenerator(ntest, new_min, new_max)
             # Effective number of tried points if I had used the full space
@@ -480,6 +476,22 @@ def sample_gen_nn2(
     else:
         npts_ls = npts
 
+    if Vrerror_target is not None:
+        if type(Vrerror_target) in [float, int]:
+            Vrerror_target_ls = [Vrerror_target]*nregs
+        elif len(Vrerror_target) == 1:
+            Vrerror_target_ls = [Vrerror_target[0]]*nregs
+        elif len(Vrerror_target) != nregs:
+            raise ValueError(
+                'The number of values in relative error targets '
+                '"Vrerror_target" should be a single number '
+                'or a list/array with one element per region: {}'.format(nregs)
+            )
+        else:
+            Vrerror_target_ls = Vrerror_target
+    else:
+        Vrerror_target_ls = [None]*nregs
+
     xaccumul = []
     vols = []
     volserror = []
@@ -490,7 +502,7 @@ def sample_gen_nn2(
             nnfun, xgenerator, j, npts_ls[j],
             ntest=ntest, batch_size=batch_size, fmargin=fmargin,
             maxiter=maxiter, verbose=verbose, sample_seed=sample_seed,
-            maxretries=maxretries, Vrerror_target=Vrerror_target
+            maxretries=maxretries, Vrerror_target=Vrerror_target_ls[j]
         )
         xaccumul.append(sam_gen[0])
         vols.append(sam_gen[1])
@@ -615,8 +627,8 @@ def sample_gen_nn3(
             if verbose > 0:
                 print(
                     "Region", vregref,
-                    "rel. error {:.3e}".format(rerr[vregref]),
-                    "target {:.3e}".format(Vrerror_target_ls[vregref]),
+                    "Vol rel. error {:.3e}".format(rerr[vregref]),
+                    "(target: < {:.3e})".format(Vrerror_target_ls[vregref]),
                     "pts accumulated",
                     xaccumul[vregref].shape[0]
                 )
@@ -721,7 +733,7 @@ def sample_gen_nn3(
                     print(
                         "Region", vregref,
                         "rel. error {:.3e}".format(rerr[vregref]),
-                        "target {:.3e}".format(Vrerror_target_ls[vregref]),
+                        "(target: < {:.3e})".format(Vrerror_target_ls[vregref]),
                         "pts accumulated",
                         xaccumul[vregref].shape[0]
                     )
@@ -851,14 +863,21 @@ def model_create(
     nodes_out,
     loss,
     learning_rate=0.001,
+    hidden_layers=None,
     use_metrics=False
 ):
     """Create a model based on parameters"""
+    if hidden_layers is None:
+        hidden_layers = 2
     D = dimensions
     model = Sequential()
     model.add(Input(shape=(D,)))
-    model.add(Dense(nodes_start, activation='relu'))
-    model.add(Dense(int(nodes_start/2 + 0.5), activation='relu'))
+    for j in range(hidden_layers):
+        if int(nodes_start/(j + 1) + 0.5) > nodes_out:
+            nodes_here = int(nodes_start/(j + 1) + 0.5)
+        else:
+            nodes_here = nodes_out
+        model.add(Dense(nodes_here, activation='relu'))
     model.add(Dense(nodes_out, activation=activation_out))
     if use_metrics:
         model.compile(
@@ -1053,13 +1072,7 @@ def retrain_sel(
     maxretries=100
 ):
     guessregs, confguess = nnfun(xpool)
-    arewrong = trueregs.flatten() - guessregs != 0
-    wrongfrac = arewrong.sum()/arewrong.shape[0]
-
-    print(
-        "Fraction of wrong classifications:",
-        wrongfrac
-    )
+    arewrong = (trueregs.flatten() - guessregs) != 0
 
     if arewrong.sum() == 0:
         print(
@@ -1068,6 +1081,19 @@ def retrain_sel(
         )
         return 0, 0, 0
 
+    # =========================================================================
+    # shufind = np.arange(arewrong.sum()).astype(int)
+    # np.random.shuffle(shufind)
+
+    # xretrain = xpool[arewrong][shufind][:nadd]
+    # wretrain = weights[arewrong][shufind][:nadd]
+    # yretrain = trueregs[arewrong][shufind][:nadd]
+
+    # indmin = weights[arewrong].argmin()
+    # indmax = weights[arewrong].argmax()
+
+    # =========================================================================
+    wrongfrac = arewrong.sum()/arewrong.shape[0]
     # limits of guessed regions
     # Lower limits
     llo = np.array(limits[:-1])[guessregs.flatten()]
@@ -1085,8 +1111,12 @@ def retrain_sel(
         gldist = gldist + gldist[gldist > 0].min()
 
     toappend = gldist/gldist.max() + gldist.min()/gldist
+    # print(toappend)
 
     repar = np.round(nadd*toappend/toappend.sum()).astype(int)
+    # print(repar)
+    # print(repar.sum(), repar.max(), (repar > 1.0).sum())
+    # print(arewrong.sum())
 
     fac = 1
     # In case the actual number of points selected for retraining is zero even
@@ -1101,13 +1131,6 @@ def retrain_sel(
     yretrain = np.repeat(trueregs[arewrong], repar, axis=0)
 
     if wrongfrac < 2/3 and xgenerator is not None:
-        # morepts = sample_gen_nn2(
-        #     nnfun, xgenerator, nadd, int(2*nadd*100),
-        #     batch_size=int(2*nadd*10), maxiter=maxiter,
-        #     verbose=verbose, sample_seed=sample_seed,
-        #     maxretries=maxretries
-        # )
-
         if sample_seed[2] is None:
             seedregs, seedconf = nnfun(sample_seed[0])
         else:
@@ -1134,6 +1157,7 @@ def retrain_sel(
         # Weight could also be useful for further selection of points
         wretrain = np.append(wretrain, wmpts[wrongfltr])
         yretrain = np.append(yretrain, ympts[wrongfltr], axis=0)
+    # =========================================================================
 
     return xretrain, yretrain, wretrain
 
@@ -1152,7 +1176,9 @@ def model_fit(
     use_metrics=False,
     sample_seed=None,
     maxretries=100,
-    callbacks=None
+    callbacks=None,
+    nodes_hidden=None,
+    hidden_layers=None,
 ):
     # global weights_as_tensor
 
@@ -1170,10 +1196,15 @@ def model_fit(
 
     xtrain, ytrain, wtrain = train_sel(xpool, weights, limits, xtrain_size)
 
+    if nodes_hidden is None:
+        nodes_hidden = nreg*2*ndim
+
     # MODEL STUFF
     this_mdl = model_create(
-        ndim, activation_out, nreg*2*ndim, nodes_out, loss,
-        learning_rate=learning_rate, use_metrics=use_metrics
+        ndim, activation_out, nodes_hidden, nodes_out, loss,
+        learning_rate=learning_rate, use_metrics=use_metrics,
+        hidden_layers=hidden_layers
+
     )
 
     if activation_out == 'softmax':
@@ -1194,6 +1225,28 @@ def model_fit(
     )
 
     nnfun = reg_pred_gen(this_mdl, data_transform)
+
+    # =======================================
+    guessregs, confguess = nnfun(xpool)
+    arewrong = (regs.flatten() - guessregs) != 0
+    wmoreone = np.abs(regs.flatten() - guessregs) > 1
+
+    wf_ls = []
+    wfone_ls = []
+    for ri in range(regs.max() + 1):
+        ri_fltr = regs.flatten() == ri
+        wf_ls.append(arewrong[ri_fltr].sum()/ri_fltr.sum())
+        wfone_ls.append(wmoreone[ri_fltr].sum()/ri_fltr.sum())
+
+    print(
+        "Fraction of wrong classifications (> 0.05%):",
+        np.round(wf_ls, decimals=3)
+    )
+    print(
+        "Fraction of wrong classifications by more than one (> 0.05%):",
+        np.round(wfone_ls, decimals=3)
+    )
+    # =======================================
 
     if ntrains > 1:
         xretr = np.copy(xtrain)
@@ -1221,12 +1274,12 @@ def model_fit(
             wretr = np.append(wretr, wtoadd)
 
             # REPEAT SMALL SAMPLE
-            cntr = []
+            counts = []
             for j in range(int(np.max(yretr)) + 1):
-                cntr.append((yretr == j).sum())
+                counts.append((yretr == j).sum())
 
-            cntr_max = max(cntr)
-            cntr_min = min(cntr)
+            cntr_max = max(counts)
+            cntr_min = min(counts)
 
             if cntr_max != cntr_min:
                 xretr_pdd = np.empty((0, xretr.shape[1]))
@@ -1285,4 +1338,412 @@ def model_fit(
                 callbacks=callbacks
             )
 
+            # =======================================
+            guessregs, confguess = nnfun(xpool)
+            arewrong = (regs.flatten() - guessregs) != 0
+            wmoreone = np.abs(regs.flatten() - guessregs) > 1
+
+            wf_ls = []
+            wfone_ls = []
+            for ri in range(regs.max() + 1):
+                ri_fltr = regs.flatten() == ri
+                wf_ls.append(arewrong[ri_fltr].sum()/ri_fltr.sum())
+                wfone_ls.append(wmoreone[ri_fltr].sum()/ri_fltr.sum())
+
+            print(
+                "Fraction of wrong classifications (> 0.05%):",
+                np.round(wf_ls, decimals=3)
+            )
+            print(
+                "Fraction of wrong classifications by more than one (> 0.05%):",
+                np.round(wfone_ls, decimals=3)
+            )
+            # =======================================
+
     return nnfun, this_mdl
+
+
+def integrate_fromnnfun(
+    integrand, xgenerator, nnfun, abserror,
+    ntgtmin=1000, batch_size=int(1e6), verbose=1, finfo=None,
+    preestpts=int(2e5), sample_seed=None,
+    second_first_error_rat=0.1
+):
+    nregs = nnfun()[1]
+
+    if finfo is None:
+        # TODO It should be possible to stop collecting points when variance
+        # has been properly estimated
+        sampre = sample_gen_nn3(
+            nnfun, xgenerator, preestpts, int(1e7),
+            batch_size=batch_size, verbose=verbose,
+            maxretries=1000, Vrerror_target=None,
+            sample_seed=sample_seed
+        )
+
+        samples_pre = sampre[0]
+        vests_pre = sampre[1]
+
+        fests_pre = np.empty((nregs))
+        fvars_pre = np.empty((nregs))
+        fmeanvars_pre = np.empty((nregs))
+        for k in range(len(samples_pre)):
+            fests_pre[k] = integrand(samples_pre[k]).mean()
+            fvars_pre[k] = integrand(samples_pre[k]).var()
+            fmeanvars_pre[k] = fvars_pre[k]/samples_pre[k].shape[0]
+    else:
+        fvars_pre = finfo[0]  # TODO
+        vests_pre = finfo[1]  # TODO
+
+    fvar2_vol2 = np.array(fvars_pre)*vests_pre**2
+    epstgt = abserror
+    # TODO Try also to share the error between parts
+    ntgt = ((nregs/(epstgt**2))*fvar2_vol2).astype(int)
+    ntgt_cp = np.copy(ntgt)
+    ntgt_cp[ntgt < ntgtmin] = ntgtmin
+
+    fmean_rvar = np.array(fmeanvars_pre)/ntgt_cp/np.array(fests_pre)**2
+    Vrertgt = (second_first_error_rat*fmean_rvar)**0.5
+
+    # TODO If volumes are known to a very good accuracy, Vrertgt could be
+    # infinity
+    samint = sample_gen_nn3(
+        nnfun, xgenerator, ntgt_cp, int(1e7),
+        batch_size=batch_size, verbose=verbose,
+        maxretries=1000, Vrerror_target=Vrertgt
+    )
+
+    samples_int = samint[0]
+    vests_int = samint[1]
+    vvars_int = samint[2]**2
+
+    fmeanvars_int = np.empty((nregs))
+
+    fests_int = np.empty((nregs))
+    fvars_int = np.empty((nregs))
+
+    for k in range(len(samint[0])):
+        reshere = integrand(samples_int[k])
+        fests_int[k] = reshere.mean()
+        fmeanvars_int[k] = reshere.var()
+        fvars_int[k] = fmeanvars_int[k]/samples_int[k].shape[0]
+
+    print(
+        np.sum(fests_int*vests_int),
+        (vests_int**2*fvars_int).sum()**0.5,
+        (vvars_int*fests_int**2).sum()**0.5,
+        (
+            vests_int**2*fvars_int
+            + vvars_int*fests_int**2
+        ).sum()**0.5,
+    )
+
+    inttest = np.sum(fests_int*vests_int)
+    errfulltest = (
+            vests_int**2*fvars_int
+            + vvars_int*fests_int**2
+        ).sum()**0.5
+
+    # TODO For the moment output could be a dictionary
+    # result
+    # error
+    # integration sample
+    # minimum target points
+    # integrand average estimates
+    # volume estimates
+    # volume variances
+    # integrand variances
+    return inttest, errfulltest, samint, ntgt, \
+        fests_int, vests_int, vvars_int, fvars_int
+
+
+def divide_merge_train(
+    integrand, xgenerator, maxruns, maxregions,
+    loss, activation_out, model_restart, retrains, npts_trainregion, epochs,
+    init_size=int(2e5), nntest_size=None, batch_size=int(1e6),
+    ptsadd_retrains=None, data_transform=None, merging=True
+):
+    if ptsadd_retrains is None:
+        ptsadd_retrains = max(int(npts_trainregion/5), 1)
+    if nntest_size is None:
+        nntest_size = 100*init_size
+
+    x0 = xgenerator(init_size)
+    res0 = integrand(x0)
+
+    lims = get_lims_backforth(res0, 3)
+
+    nptsreg = init_size
+    # TODO nptsreg starts as init_size but should specialize in the region
+    # creation loop according to region variances
+
+    nnfun_ls = []
+    model_ls = []
+    limits_ls = []
+    xpool_ls = []
+    fpool_ls = []
+
+    testfun = [None]*maxruns
+    testmdl = [None]*maxruns
+    limits = [lims] + [None]*maxruns
+    xpool = [x0] + [None]*maxruns
+    fpool = [res0] + [None]*maxruns
+
+    print(
+        "Run 1:",
+        "Will use {} regions with limits".format(len(limits[0]) - 1),
+        limits[0]
+    )
+    limits_ls.append(limits[0])
+    xpool_ls.append(xpool[0])
+    fpool_ls.append(fpool[0])
+
+    for j in range(maxruns):
+        nreg = len(limits[j]) - 1
+        xpool_all = np.concatenate(xpool[:j + 1], axis=0)
+        fpool_all = np.concatenate(fpool[:j + 1])
+
+        testfun[j], testmdl[j] = model_fit(
+            np.concatenate(xpool[:j + 1], axis=0),
+            np.concatenate(fpool[:j + 1]),
+            integrand, limits[j], npts_trainregion*nreg,
+            activation_out, loss,
+            epochs_part=epochs, ntrains=retrains,
+            data_transform=data_transform,
+            model_restart=model_restart, xgenerator=xgenerator,
+            nadd_retrain=ptsadd_retrains*nreg,
+            batch_size=batch_size,
+            sample_seed=(
+                xpool_all,
+                fpool_all,
+                None
+            ),
+            maxretries=5,
+        )
+
+        nnfun_ls.append(testfun[j])
+        model_ls.append(testmdl[j])
+
+        if nreg >= maxregions:
+            break
+
+        # Use the accumulated sample to help refine sampling
+        preseed0 = xpool_all
+        preseed1 = fpool_all
+        preseed2, _ = testfun[j](xpool_all)
+
+        thisseed = (preseed0, preseed1, preseed2)
+
+        # TODO Further optimizations: number of points per region (nptsreg)
+        # should be a list where regions with low variance need to accumulate
+        # less points.
+        print("Training finished. Creating a sample using trained network...")
+        # Create a sample of points using the neural network
+        morepts = sample_gen_nn2(
+            testfun[j], xgenerator, nptsreg, nntest_size,
+            batch_size=batch_size, maxiter=1000,
+            sample_seed=thisseed,
+            maxretries=5
+        )
+        print("Sample created!")
+        print("Calculating weights and estimates using sample")
+
+        morefvals = [integrand(morepts[0][n]) for n in range(len(morepts[0]))]
+
+        # Averages in regions
+        means = [
+            morefvals[n].mean()
+            for n in range(len(morepts[0]))
+        ]
+
+        # Deviation in regions
+        sigs = [
+            morefvals[n].std()
+            for n in range(len(morepts[0]))
+        ]
+
+        thesum = (np.array(morepts[1])*np.array(means)).sum()
+        theerr = (
+            (np.array(morepts[1])**2)*(np.array(sigs))**2/nptsreg
+        ).sum()**0.5
+
+        devs_net = []
+        devs_corr = []
+        for k1 in range(nreg):
+            fltr = (
+                morefvals[k1] > limits[j][k1]
+            )*(
+                morefvals[k1] < limits[j][k1 + 1]
+            )
+            devs_net.append(
+                sigs[k1]*morepts[1][k1]
+            )
+            devs_corr.append(
+                morefvals[k1][fltr].std()*morepts[1][k1]
+            )
+        devs_net = np.array(devs_net)
+        devs_corr = np.array(devs_corr)
+
+        print("means", means)
+        print("sigs", sigs)
+        print("[1msum and error from sigma(f)^2*V^2[0m", thesum, theerr)
+        print(
+            "sigma(f)*V from network",
+            devs_net
+        )
+        print("Corrected sigma(f)*V", devs_corr)
+
+        # DETERMINE NEW LIMITS
+        # l10rdevs = np.log10(devs_corr)
+        l10rdevs = np.log10(devs_corr)
+        l10rdevs_mean = l10rdevs.mean()
+        # cond = 0.5
+        # Divide regions that have V*sigma around half order of magnitude
+        # larger than average
+        cond = l10rdevs_mean + 0.5
+        reg_rediv = l10rdevs > cond
+
+        cond_nreduc = 0
+        while not any(reg_rediv) and cond_nreduc < 5:
+            cond = cond*0.5
+            cond_nreduc += 1
+            reg_rediv = l10rdevs > cond
+            print("Condition for redivision reduced:", cond)
+
+        limits_rediv = list(limits[j])
+        l10rdevs_pad = list(l10rdevs)
+        lims_added = 0
+        for k2 in range(len(reg_rediv)):
+            if reg_rediv[k2]:
+                print("Redivide region", k2)
+                fltr_corr = (
+                    (morefvals[k2] > limits[j][k2])
+                    * (morefvals[k2] <= limits[j][k2 + 1])
+                )
+                lims_new = get_lims_backforth(morefvals[k2][fltr_corr], 3)
+                lims_added += 1
+                limits_rediv = (
+                    limits_rediv[:k2 + lims_added]
+                    + [lims_new[1]]
+                    + limits_rediv[k2 + lims_added:]
+                )
+                # ADD DUMMY VALUE DUE TO ADDING PREVIOUS LIMIT, NEEDED WHEN
+                # MERGING
+                l10rdevs_pad = (
+                    l10rdevs_pad[:k2 + lims_added]
+                    + [l10rdevs_mean + 2]
+                    + l10rdevs_pad[k2 + lims_added:]
+                )
+        l10rdevs_pad = np.array(l10rdevs_pad)
+
+        # MERGE regions that have V*sigma certain orders of magnitude smaller
+        # than average
+        if len(limits[j][1:]) > 2:
+            # reg_merge = l10rdevs_pad < -2
+            reg_merge = l10rdevs_pad < l10rdevs_mean - 6
+        else:
+            reg_merge = l10rdevs_pad < -np.inf
+
+        if not merging:
+            reg_merge = l10rdevs_pad < -np.inf
+
+        if np.any(reg_merge):
+            limits[j + 1], devs_dum, indmrg = merge_lim(
+                limits_rediv, 10**np.array(l10rdevs_pad))
+        else:
+            limits[j + 1] = limits_rediv
+        # NEW LIMITS HAVE BEEN DETERMINED
+
+        needboost = []
+        for k3 in range(len(reg_rediv)):
+            if reg_rediv[k3]:
+                gotabove = ((
+                    fpool_all > limits_rediv[k3 + 1]
+                )*(
+                    fpool_all < limits_rediv[k3 + 2]
+                )).sum()
+                gotbelow = ((
+                    fpool_all > limits_rediv[k3]
+                )*(
+                    fpool_all < limits_rediv[k3 + 1]
+                )).sum()
+                needboost.append(
+                    any(gv < npts_trainregion for gv in [gotabove, gotbelow])
+                )
+                print("Region", k3, "got above new limit:", gotabove)
+                print("Region", k3, "got below new limit:", gotbelow)
+            else:
+                needboost.append(False)
+
+        maxboostatt = 6
+        boostattempts = 0
+        while any(needboost) and boostattempts < maxboostatt:
+            print("Boost attempt", boostattempts + 1)
+            nptsreg_rediv = nptsreg*np.array(needboost)
+            mrpts_r0 = sample_gen_nn2(
+                testfun[j], xgenerator, nptsreg_rediv, int(1e7),
+                batch_size=batch_size, maxiter=1000,
+                sample_seed=thisseed,
+                maxretries=5
+            )
+
+            for k4 in range(len(morepts[0])):
+                if nptsreg_rediv[k4] > 0:
+                    morepts[0][k4] = np.append(
+                        morepts[0][k4],
+                        mrpts_r0[0][k4],
+                        axis=0
+                    )
+                    morefvals[k4] = np.append(
+                        morefvals[k4],
+                        integrand(mrpts_r0[0][k4])
+                    )
+
+            for k5 in range(len(reg_rediv)):
+                if needboost[k5]:
+                    gotabove = ((
+                        morefvals[k5] > limits_rediv[k5 + 1]
+                    )*(
+                        morefvals[k5] < limits_rediv[k5 + 2]
+                    )).sum() + ((
+                        fpool_all > limits_rediv[k5 + 1]
+                    )*(
+                        fpool_all < limits_rediv[k5 + 2]
+                    )).sum()
+                    gotbelow = ((
+                        morefvals[k5] > limits_rediv[k5]
+                    )*(
+                        morefvals[k5] < limits_rediv[k5 + 1]
+                    )).sum() + ((
+                        fpool_all > limits_rediv[k5]
+                    )*(
+                        fpool_all < limits_rediv[k5 + 1]
+                    )).sum()
+
+                    needboost[k5] = any(
+                        gv < npts_trainregion for gv in [gotabove, gotbelow]
+                    )
+                    print("Region", k5, "got above new limit:", gotabove)
+                    print("Region", k5, "got below new limit:", gotbelow)
+            boostattempts += 1
+
+        print(
+            "Run {}:".format(j + 1),
+            "Will use {} regions with limits".format(len(limits[j + 1]) - 1),
+            limits[j + 1]
+        )
+
+        limits_ls.append(limits[j + 1])
+
+        xpool[j + 1] = np.concatenate(morepts[0], axis=0)
+        fpool[j + 1] = np.concatenate(morefvals)
+
+        xpool_ls.append(xpool[j + 1])
+        fpool_ls.append(fpool[j + 1])
+
+        # Checking for points outside range should be done elsewhere
+        # if xpool[j + 1].max() > side/2 or xpool[j + 1].min() < -side/2:
+        #     print("[1mPOINTS OUTSIDE OF RANGE GENERATED![0m")
+        #     break
+
+    return nnfun_ls, model_ls, xpool_ls, fpool_ls
