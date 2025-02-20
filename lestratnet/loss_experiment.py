@@ -98,6 +98,136 @@ def loss_setup(loss='categorical_crossentropy', mod=None, alpha=1.0, cep=None):
     return myloss
 
 
+def loss_setup2(loss='categorical_crossentropy', mod=None, alpha=1.0, cep=None):
+    if cep is None:
+        if loss == 'binary_crossentropy':
+            cep = 7
+        else:
+            cep = 20
+
+    clip_eps = 10**-cep
+
+    if loss == 'categorical_crossentropy':
+
+        @tf.function()
+        def losstyp(y_true, y_pred):
+            y_pred_cl = tf.clip_by_value(y_pred, clip_eps, 1)
+            res = tf.math.log(y_pred_cl[y_true == 1])
+            return -res
+
+    elif loss == 'binary_crossentropy':
+
+        @tf.function()
+        def losstyp(y_true, y_pred):
+            y_pred_cl = tf.clip_by_value(y_pred, clip_eps, 1 - clip_eps)
+            bce1 = tf.math.log(y_pred_cl)*y_true
+            bce2 = tf.math.log(1.0 - y_pred_cl)*(1.0 - y_true)
+            return -tf.math.reduce_sum(bce1 + bce2, axis=1)
+
+    elif loss == 'squared_hinge':
+
+        @tf.function()
+        def losstyp(y_true, y_pred):
+            return tf.math.reduce_sum((1 - y_true*y_pred)**2, axis=1)
+
+    else:
+        raise ValueError(
+            "Option `loss` must be one of:\n"
+            "    categorical_crossentropy\n"
+            "    binary_crossentropy\n"
+            "    squared_hinge\n"
+        )
+
+    if mod == 0 or mod is None:
+        @tf.function()
+        def getmod(y_true, y_pred):
+            y_true_adj = (y_true + 1)/2
+
+            y_true_r = tf.math.round(y_true_adj)
+
+            r_true = tf.math.reduce_sum(y_true_r, axis=1)
+            return tf.cast(1.0, tf.float32), r_true
+    else:
+        @tf.function()
+        def getrdiff(y_true, y_pred):
+            y_true_adj = (y_true + 1)/2
+            y_pred_adj = (y_pred + 1)/2
+
+            y_true_r = tf.math.round(y_true_adj)
+            y_pred_r = tf.math.round(y_pred_adj)
+
+            r_true = tf.math.reduce_sum(y_true_r, axis=1)
+            r_pred = tf.math.reduce_sum(y_pred_r, axis=1)
+
+            r_diff = tf.math.abs(r_true - r_pred)
+
+            return r_diff**alpha, r_true
+
+        if mod in [1, 3, 5]:
+            @tf.function()
+            def getmod(y_true, y_pred):
+                return getrdiff(y_true, y_pred)
+        elif mod in [2, 4, 6]:
+            @tf.function()
+            def getmod(y_true, y_pred):
+                grd1, grd2 = getrdiff(y_true, y_pred)
+                return 1 + grd1, grd2
+
+    if mod in [0, 1, 2] or mod is None:
+        @tf.function()
+        def myloss(y_true, y_pred):
+            loss1 = losstyp(y_true, y_pred)
+            mod1, r_true = getmod(y_true, y_pred)
+            lossprod = loss1*mod1
+
+            shw_sum = tf.cast(0.0, tf.float32)
+            for k in range(int(tf.math.reduce_max(r_true)) + 1):
+                ireg = tf.cast(k, tf.float32)
+                shw_sum += tf.math.reduce_mean(
+                    lossprod[r_true == ireg]
+                )
+
+            return shw_sum
+    elif mod in [3, 4]:
+        @tf.function()
+        def myloss(y_true, y_pred):
+            loss1 = losstyp(y_true, y_pred)
+            mod1, r_true = getmod(y_true, y_pred)
+            lossprod = loss1*mod1
+
+            shw_sum = tf.cast(0.0, tf.float32)
+            for k in range(int(tf.math.reduce_max(r_true)) + 1):
+                ireg = tf.cast(k, tf.float32)
+                shw_sum += tf.math.reduce_mean(
+                    lossprod[r_true == ireg]
+                )
+
+            return tf.math.reduce_mean(loss1)*shw_sum
+    elif mod in [5, 6]:
+        @tf.function()
+        def myloss(y_true, y_pred):
+            loss1 = losstyp(y_true, y_pred)
+            mod1, r_true = getmod(y_true, y_pred)
+            lossprod = loss1**2*mod1
+
+            shw_sum = tf.cast(0.0, tf.float32)
+            for k in range(int(tf.math.reduce_max(r_true)) + 1):
+                ireg = tf.cast(k, tf.float32)
+                shw_sum += tf.math.reduce_mean(
+                    lossprod[r_true == ireg]
+                )
+
+            return shw_sum
+    elif mod in [7]:
+        @tf.function()
+        def myloss(y_true, y_pred):
+            return tf.math.reduce_sum((1 - y_true*y_pred)**alpha, axis=1)
+            # loss1 = losstyp(y_true, y_pred)
+            # return tf.math.reduce_mean(loss1**alpha)
+
+    return myloss
+
+
 def squared_hinge_mod(index=0):
     @tf.function(reduce_retracing=True)
     def loss_mod(y_true, y_pred):
