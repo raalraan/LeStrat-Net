@@ -97,8 +97,6 @@ def reg_pred_gen(model, data_transform=None):
             regres_pre = []
             modres_out = []
             for j in range(len(model)):
-                # with tf.device('CPU:0'):
-                # gc.collect()
                 modres_here = model[j].predict(
                     xdata_tf,
                     batch_size=batch_size,
@@ -118,8 +116,6 @@ def reg_pred_gen(model, data_transform=None):
                 (len(model), xdata_tf.shape[0])
             ).T.sum(axis=1)
         else:
-            # with tf.device('CPU:0'):
-            # gc.collect()
             modres = model.predict(
                 xdata_tf,
                 batch_size=batch_size,
